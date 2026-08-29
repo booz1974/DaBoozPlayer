@@ -1,6 +1,12 @@
 # Da Booz Player — Native Music Assistant App
 
+![Da Booz Player](docs/banner.jpg)
+
 Een moderne, native Android-app voor het bedienen van je **Music Assistant** (MA) server. Deze app is ontworpen om een snelle en betrouwbare interface te bieden, onafhankelijk van de Home Assistant Ingress-proxy, met slimme functies voor thuisgebruik.
+
+<p align="center">
+  <img src="docs/screenshot.jpg" alt="Speler-scherm met wachtrij" width="320">
+</p>
 
 ## Nieuw: AI Radio DJ (Beta) 🎙️
 De app bevat nu een experimentele **AI Radio DJ** die je playlists aan elkaar praat:
