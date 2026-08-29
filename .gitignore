@@ -1,0 +1,29 @@
+# Gradle
+/.gradle/
+.gradle/
+build/
+/app/build/
+
+# Build outputs (APK/AAB/baseline profiles/metadata)
+/app/release/
+/app/debug/
+*.apk
+*.aab
+*.dm
+
+# Android Studio / IntelliJ
+/.idea/
+*.iml
+.DS_Store
+/local.properties
+/captures/
+.externalNativeBuild/
+.cxx/
+
+# Keystores / signing
+*.jks
+*.keystore
+keystore.properties
+
+# Claude Code / tooling scratch
+/.artifacts/
