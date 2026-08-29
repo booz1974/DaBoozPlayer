@@ -47,6 +47,13 @@ class MassViewModel : ViewModel() {
     private var currentRadioTrack: RadioHistoryEntry? = null
     /** Laatst bekende URI van de spelende radiozender, om na een tussendoor-nummer te hervatten. */
     private var lastRadioUri: String? = null
+    /**
+     * Gezet zodra de gebruiker een nummer uit "Eerder op deze zender" aantikt: tot de
+     * zender weer speelt (of dit na [PENDING_RADIO_RESUME_MS] verloopt) mag de
+     * geschiedenislijst niet gewist worden door het tussendoor-nummer.
+     */
+    private var pendingRadioResumeUri: String? = null
+    private var pendingRadioResumeSetAt: Long = 0L
 
     private var onSavePlaylist: (suspend (String?, String?) -> Unit)? = null
     private var onSaveLocations: (suspend (List<MassLocation>, String) -> Unit)? = null
@@ -415,9 +422,19 @@ class MassViewModel : ViewModel() {
         val cur = queue?.currentItem
         val isRadioNow = cur != null && cur.isRadio && cur.hasStreamInfo
 
+        // Wacht de gebruiker nog op het hervatten van de zender na een handmatig
+        // gekozen nummer? Laat de verlopen-check hier één keer draaien.
+        val awaitingRadioResume = pendingRadioResumeUri != null &&
+            System.currentTimeMillis() - pendingRadioResumeSetAt < PENDING_RADIO_RESUME_MS
+        if (pendingRadioResumeUri != null && !awaitingRadioResume) {
+            pendingRadioResumeUri = null
+        }
+
         if (!isRadioNow) {
-            // Speelt er tijdelijk een los nummer (uit de geschiedenis aangeklikt)
-            // terwijl de zender nog in de wachtrij staat? Dan geschiedenis bewaren.
+            // Speelt er tijdelijk een los nummer (uit de geschiedenis aangeklikt)?
+            // Bewaar de lijst zolang de zender nog in de wachtrij staat óf we nog
+            // op het hervatten wachten (de "add" kan een tel later komen dan de "replace").
+            if (awaitingRadioResume) return
             if (queue?.items?.any { it.isRadio } == true) return
             if (currentRadioTrack != null || _uiState.value.radioHistory.isNotEmpty()) {
                 currentRadioTrack = null
@@ -433,6 +450,16 @@ class MassViewModel : ViewModel() {
         val stationUri = cur!!.uri ?: queue.activeSourceUri
         lastRadioUri = cur.uri ?: lastRadioUri
         val key = "${cur.streamArtist} ${cur.streamTrack}"
+
+        // De zender is terug na een handmatig gekozen nummer: behandel dit als
+        // dezelfde zender zodat de geschiedenis blijft staan.
+        if (awaitingRadioResume) {
+            pendingRadioResumeUri = null
+            lastRadioStationUri = stationUri
+            lastRadioTrackKey = key
+            currentRadioTrack = RadioHistoryEntry(cur.streamArtist, cur.streamTrack, cur.streamAlbum)
+            return
+        }
 
         if (stationUri != lastRadioStationUri) {
             lastRadioStationUri = stationUri
@@ -482,6 +509,11 @@ class MassViewModel : ViewModel() {
                     }
                     return@launch
                 }
+                // Vanaf nu tot de zender weer speelt: "Eerder op deze zender" niet wissen.
+                if (!radioUri.isNullOrBlank()) {
+                    pendingRadioResumeUri = radioUri
+                    pendingRadioResumeSetAt = System.currentTimeMillis()
+                }
                 client?.playMedia(playerId, trackUri, "replace")
                 if (!radioUri.isNullOrBlank()) {
                     delay(700)
@@ -490,6 +522,7 @@ class MassViewModel : ViewModel() {
                 delay(800)
                 tick()
             } catch (e: Exception) {
+                pendingRadioResumeUri = null
                 _uiState.update { it.copy(errorMessage = "Nummer afspelen mislukt: ${e.message}") }
             }
         }
@@ -953,6 +986,11 @@ class MassViewModel : ViewModel() {
                 _uiState.update { it.copy(errorMessage = "Afspelen mislukt: ${e.message}") }
             }
         }
+    }
+
+    private companion object {
+        /** Hoe lang "Eerder op deze zender" beschermd blijft na een handmatige nummerkeuze. */
+        const val PENDING_RADIO_RESUME_MS = 5 * 60 * 1000L
     }
 
     fun playRadioNext(radio: MassRadio) {
