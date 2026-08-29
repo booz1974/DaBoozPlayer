@@ -8,6 +8,8 @@ Een moderne, native Android-app voor het bedienen van je **Music Assistant** (MA
   <img src="docs/screenshot.jpg" alt="Speler-scherm met wachtrij" width="320">
 </p>
 
+Boven in het scherm zit een cassettebandje: de spoeltjes **draaien zolang er muziek speelt** en **staan stil zodra de muziek pauzeert of stopt**, zodat je in één oogopslag ziet of er iets klinkt.
+
 ## Nieuw: AI Radio DJ (Beta) 🎙️
 De app bevat nu een experimentele **AI Radio DJ** die je playlists aan elkaar praat:
 - **ElevenLabs Integratie**: Gebruikt de hoogwaardige stemmen van ElevenLabs via Home Assistant.
