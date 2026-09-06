@@ -428,10 +428,15 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
                     }
 
                     // Zodra het slepen stopt: stuur de netto-verschuiving naar de server.
+                    // We lezen de lijsten via rememberUpdatedState, anders blijft dit
+                    // effect (dat maar één keer start) naar de begin-waarden wijzen en
+                    // wordt er na de eerste wachtrij-poll niets meer verstuurd.
+                    val latestUpcoming by rememberUpdatedState(upcoming)
+                    val latestWorking by rememberUpdatedState(workingUpcoming)
                     LaunchedEffect(reorderState) {
                         snapshotFlow { reorderState.isAnyItemDragging }.collect { dragging ->
                             if (!dragging) {
-                                computeSingleMove(upcoming, workingUpcoming)?.let { (item, delta) ->
+                                computeSingleMove(latestUpcoming, latestWorking)?.let { (item, delta) ->
                                     viewModel.moveUpcomingItem(item, delta)
                                 }
                             }
