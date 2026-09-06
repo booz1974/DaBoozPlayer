@@ -85,8 +85,16 @@ class PlaybackService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // We zijn (mogelijk) via startForegroundService() gestart; dan MOET er
+        // binnen ~5s een startForeground() volgen — ook als we meteen weer willen
+        // stoppen. Anders killt het systeem ons met
+        // ForegroundServiceDidNotStartInTimeException.
+        val np = NowPlayingBus.state.value
+        startForegroundCompat(buildNotification(np))
+
         MediaButtonReceiver.handleIntent(session, intent)
-        if (NowPlayingBus.state.value == null) {
+
+        if (np == null) {
             stopForegroundCompat()
             stopSelf()
         }
