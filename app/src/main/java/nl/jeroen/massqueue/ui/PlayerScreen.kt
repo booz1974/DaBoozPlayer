@@ -1293,12 +1293,20 @@ private fun PlayerDropdown(state: UiState, onSelect: (String) -> Unit) {
             }
         }
 
+        // Spelers die in de instellingen zijn verborgen, laten we uit de keuzelijst weg
+        // (de speler die nu geselecteerd is blijft zichtbaar zodat je kunt wisselen).
+        val visiblePlayers = state.players.filter { player ->
+            player.id == state.selectedPlayerId ||
+            !(state.hiddenPlayerIds.contains(player.id) ||
+              state.hiddenPlayerIds.contains(player.name.lowercase().trim()))
+        }
+
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
             modifier = Modifier.fillMaxWidth(0.9f)
         ) {
-            state.players.forEach { player ->
+            visiblePlayers.forEach { player ->
                 DropdownMenuItem(
                     text = { Text(formatPlayerName(player)) },
                     onClick = {

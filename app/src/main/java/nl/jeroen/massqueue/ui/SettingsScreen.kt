@@ -34,6 +34,7 @@ fun SettingsScreen(
     players: List<MassPlayer>,
     volumeControlPlayerIds: Set<String>,
     localPlayerIds: Set<String>,
+    hiddenPlayerIds: Set<String>,
     playerAliases: Map<String, String>,
     onSave: (url: String, token: String) -> Unit,
     onAddLocation: (String) -> Unit,
@@ -42,6 +43,7 @@ fun SettingsScreen(
     onPinLocation: () -> Unit,
     onToggleVolumePlayer: (String) -> Unit,
     onToggleLocalPlayer: (String) -> Unit,
+    onToggleHiddenPlayer: (String) -> Unit,
     onSetPlayerAlias: (String, String) -> Unit
 ) {
     var url by remember(initialUrl) { 
@@ -53,6 +55,7 @@ fun SettingsScreen(
     
     var showVolumePlayers by remember { mutableStateOf(false) }
     var showLocalPlayers by remember { mutableStateOf(false) }
+    var showHiddenPlayers by remember { mutableStateOf(false) }
     var showAliases by remember { mutableStateOf(false) }
     var showAddLocation by remember { mutableStateOf(false) }
     var newLocationName by remember { mutableStateOf("") }
@@ -261,7 +264,42 @@ fun SettingsScreen(
                 Text("Selecteer lokale spelers ($localCount)")
             }
 
+            Spacer(Modifier.height(32.dp))
+            HorizontalDivider(color = Color.LightGray)
+            Spacer(Modifier.height(24.dp))
+
+            Text(
+                "Spelers in keuzelijst",
+                style = MaterialTheme.typography.titleMedium,
+                color = Color.Black
+            )
+            Text(
+                "Kies welke spelers zichtbaar zijn in de speler-keuzelijst op het hoofdscherm.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.DarkGray
+            )
             Spacer(Modifier.height(12.dp))
+
+            val visibleCount = players.count { player ->
+                !(hiddenPlayerIds.contains(player.id) ||
+                  hiddenPlayerIds.contains(player.name.lowercase().trim()))
+            }
+
+            Button(
+                onClick = { showHiddenPlayers = true },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF0F5E56), // CassetteTeal
+                    contentColor = Color.White
+                )
+            ) {
+                Text("Selecteer zichtbare spelers ($visibleCount/${players.size})")
+            }
+
+            Spacer(Modifier.height(32.dp))
+            HorizontalDivider(color = Color.LightGray)
+            Spacer(Modifier.height(24.dp))
+
             Button(
                 onClick = { showAliases = true },
                 modifier = Modifier.fillMaxWidth(),
@@ -426,6 +464,67 @@ fun SettingsScreen(
                             Checkbox(
                                 checked = localPlayerIds.contains(player.id),
                                 onCheckedChange = { onToggleLocalPlayer(player.id) },
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = Color(0xFF0F5E56),
+                                    uncheckedColor = Color.Gray,
+                                    checkmarkColor = Color.White
+                                )
+                            )
+                            Text(
+                                player.name,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = Color.Black,
+                                modifier = Modifier.padding(start = 8.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showHiddenPlayers) {
+        ModalBottomSheet(
+            onDismissRequest = { showHiddenPlayers = false },
+            containerColor = Color(0xFFFAF3E0) // CassetteCream
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp)
+                    .padding(bottom = 32.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "SPELERS IN KEUZELIJST",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.Black
+                    )
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = { showHiddenPlayers = false }) {
+                        Icon(Icons.Default.Close, contentDescription = "Sluiten", tint = Color.Black)
+                    }
+                }
+                Text(
+                    "Vink de spelers aan die je wilt zien in de keuzelijst op het hoofdscherm. Uitgevinkte spelers worden verborgen.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.DarkGray
+                )
+                Spacer(Modifier.height(16.dp))
+
+                LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
+                    items(players) { player ->
+                        val isVisible = !(hiddenPlayerIds.contains(player.id) ||
+                            hiddenPlayerIds.contains(player.name.lowercase().trim()))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = isVisible,
+                                onCheckedChange = { onToggleHiddenPlayer(player.id) },
                                 colors = CheckboxDefaults.colors(
                                     checkedColor = Color(0xFF0F5E56),
                                     uncheckedColor = Color.Gray,

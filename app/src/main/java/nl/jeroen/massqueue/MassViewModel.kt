@@ -59,6 +59,7 @@ class MassViewModel : ViewModel() {
     private var onSaveLocations: (suspend (List<MassLocation>, String) -> Unit)? = null
     private var onSaveVolumePlayers: (suspend (Set<String>) -> Unit)? = null
     private var onSaveLocalPlayers: (suspend (Set<String>) -> Unit)? = null
+    private var onSaveHiddenPlayers: (suspend (Set<String>) -> Unit)? = null
     private var onSavePlayerAliases: (suspend (Map<String, String>) -> Unit)? = null
 
     private var lastLat: Double = 0.0
@@ -94,17 +95,20 @@ class MassViewModel : ViewModel() {
         activeLocationId: String? = null,
         volumeControlPlayerIds: Set<String> = emptySet(),
         localPlayerIds: Set<String> = emptySet(),
+        hiddenPlayerIds: Set<String> = emptySet(),
         playerAliases: Map<String, String> = emptyMap(),
         saveCallback: (suspend (String?, String?) -> Unit)? = null,
         saveLocationsCallback: (suspend (List<MassLocation>, String) -> Unit)? = null,
         saveVolumeCallback: (suspend (Set<String>) -> Unit)? = null,
         saveLocalCallback: (suspend (Set<String>) -> Unit)? = null,
+        saveHiddenCallback: (suspend (Set<String>) -> Unit)? = null,
         saveAliasesCallback: (suspend (Map<String, String>) -> Unit)? = null
     ) {
         onSavePlaylist = saveCallback
         onSaveLocations = saveLocationsCallback
         onSaveVolumePlayers = saveVolumeCallback
         onSaveLocalPlayers = saveLocalCallback
+        onSaveHiddenPlayers = saveHiddenCallback
         onSavePlayerAliases = saveAliasesCallback
         if (client == null) {
             client = MassApiClient(baseUrl, authToken)
@@ -130,6 +134,7 @@ class MassViewModel : ViewModel() {
                 activeLocationId = activeLocationId ?: locations.firstOrNull()?.id ?: "default",
                 volumeControlPlayerIds = volumeControlPlayerIds,
                 localPlayerIds = localPlayerIds,
+                hiddenPlayerIds = hiddenPlayerIds,
                 playerAliases = playerAliases
             ) 
         }
@@ -237,6 +242,20 @@ class MassViewModel : ViewModel() {
         _uiState.update { it.copy(localPlayerIds = next) }
         viewModelScope.launch {
             onSaveLocalPlayers?.invoke(next)
+        }
+    }
+
+    /** Zet een speler aan/uit in de keuzelijst op het hoofdscherm (aangevinkt = verborgen). */
+    fun toggleHiddenPlayer(playerId: String) {
+        val current = _uiState.value.hiddenPlayerIds
+        val next = if (current.contains(playerId)) {
+            current - playerId
+        } else {
+            current + playerId
+        }
+        _uiState.update { it.copy(hiddenPlayerIds = next) }
+        viewModelScope.launch {
+            onSaveHiddenPlayers?.invoke(next)
         }
     }
 

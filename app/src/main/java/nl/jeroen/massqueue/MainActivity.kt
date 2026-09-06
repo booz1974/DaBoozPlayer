@@ -140,11 +140,13 @@ class MainActivity : ComponentActivity() {
                             activeLocationId = settings.activeLocationId,
                             volumeControlPlayerIds = settings.volumeControlPlayerIds,
                             localPlayerIds = settings.localPlayerIds,
+                            hiddenPlayerIds = settings.hiddenPlayerIds,
                             playerAliases = settings.playerAliases,
                             saveCallback = { name, uri -> settingsStore.saveActivePlaylist(name, uri) },
                             saveLocationsCallback = { locs, id -> settingsStore.saveLocations(locs, id) },
                             saveVolumeCallback = { ids -> settingsStore.saveVolumePlayers(ids) },
                             saveLocalCallback = { ids -> settingsStore.saveLocalPlayers(ids) },
+                            saveHiddenCallback = { ids -> settingsStore.saveHiddenPlayers(ids) },
                             saveAliasesCallback = { aliases -> settingsStore.savePlayerAliases(aliases) }
                         )
                     } else {
@@ -176,6 +178,7 @@ class MainActivity : ComponentActivity() {
                                     players = state.players,
                                     volumeControlPlayerIds = state.volumeControlPlayerIds,
                                     localPlayerIds = state.localPlayerIds,
+                                    hiddenPlayerIds = state.hiddenPlayerIds,
                                     playerAliases = state.playerAliases,
                                     onSave = { url, token ->
                                         scope.launch {
@@ -190,11 +193,13 @@ class MainActivity : ComponentActivity() {
                                                 activeLocationId = state.activeLocationId,
                                                 volumeControlPlayerIds = state.volumeControlPlayerIds,
                                                 localPlayerIds = state.localPlayerIds,
+                                                hiddenPlayerIds = state.hiddenPlayerIds,
                                                 playerAliases = state.playerAliases,
                                                 saveCallback = { n, u -> settingsStore.saveActivePlaylist(n, u) },
                                                 saveLocationsCallback = { locs, id -> settingsStore.saveLocations(locs, id) },
                                                 saveVolumeCallback = { ids -> settingsStore.saveVolumePlayers(ids) },
                                                 saveLocalCallback = { ids -> settingsStore.saveLocalPlayers(ids) },
+                                                saveHiddenCallback = { ids -> settingsStore.saveHiddenPlayers(ids) },
                                                 saveAliasesCallback = { al -> settingsStore.savePlayerAliases(al) }
                                             )
                                         }
@@ -205,6 +210,7 @@ class MainActivity : ComponentActivity() {
                                     onPinLocation = viewModel::pinHomeLocation,
                                     onToggleVolumePlayer = { viewModel.toggleVolumePlayer(it) },
                                     onToggleLocalPlayer = { viewModel.toggleLocalPlayer(it) },
+                                    onToggleHiddenPlayer = { viewModel.toggleHiddenPlayer(it) },
                                     onSetPlayerAlias = { id, alias -> viewModel.setPlayerAlias(id, alias) }
                                 )
                             }

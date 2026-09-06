@@ -183,6 +183,8 @@ data class UiState(
     val aiRadioLoading: Boolean = false,
     val volumeControlPlayerIds: Set<String> = emptySet(),
     val localPlayerIds: Set<String> = emptySet(),
+    /** Spelers die de gebruiker uit de keuzelijst op het hoofdscherm heeft verborgen. */
+    val hiddenPlayerIds: Set<String> = emptySet(),
     val playerAliases: Map<String, String> = emptyMap(),
     /** Epoch-ms waarop de slaaptimer de muziek pauzeert; null = geen timer actief. */
     val sleepTimerEndsAtMs: Long? = null,

@@ -20,6 +20,7 @@ private val KEY_LOCATIONS = stringPreferencesKey("locations_json")
 private val KEY_ACTIVE_LOCATION_ID = stringPreferencesKey("active_location_id")
 private val KEY_VOLUME_PLAYERS = stringSetPreferencesKey("volume_players")
 private val KEY_LOCAL_PLAYERS = stringSetPreferencesKey("local_players")
+private val KEY_HIDDEN_PLAYERS = stringSetPreferencesKey("hidden_players")
 private val KEY_PLAYER_ALIASES = stringSetPreferencesKey("player_aliases")
 
 data class SettingsData(
@@ -31,6 +32,7 @@ data class SettingsData(
     val activeLocationId: String?,
     val volumeControlPlayerIds: Set<String>,
     val localPlayerIds: Set<String>,
+    val hiddenPlayerIds: Set<String>,
     val playerAliases: Map<String, String>
 )
 
@@ -54,6 +56,7 @@ class SettingsStore(private val context: Context) {
             localPlayerIds = prefs[KEY_LOCAL_PLAYERS] ?: setOf(
                 "tuin", "yamaha living", "binnen&buiten", "kijkpaal"
             ),
+            hiddenPlayerIds = prefs[KEY_HIDDEN_PLAYERS] ?: emptySet(),
             playerAliases = (prefs[KEY_PLAYER_ALIASES] ?: setOf(
                 "yamaha living:Woonkamer",
                 "tuin:Buiten",
@@ -144,6 +147,12 @@ class SettingsStore(private val context: Context) {
     suspend fun saveLocalPlayers(playerIds: Set<String>) {
         context.dataStore.edit { prefs ->
             prefs[KEY_LOCAL_PLAYERS] = playerIds
+        }
+    }
+
+    suspend fun saveHiddenPlayers(playerIds: Set<String>) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_HIDDEN_PLAYERS] = playerIds
         }
     }
 
