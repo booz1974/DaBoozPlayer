@@ -355,13 +355,23 @@ class MassViewModel : ViewModel() {
                 if (filteredPlayers.any { it.id == id }) id else null
             } ?: playingId ?: filteredPlayers.firstOrNull()?.id
 
+            // Samenvatting van alle wachtrijen (o.a. voor synced groepen zoals "SPZ", waar
+            // `players/all` geen `active_source` teruggeeft terwijl de wachtrij wel gevuld is).
+            val queueSummaries = try {
+                c.getAllQueueSummaries().associateBy { it.queueId }
+            } catch (e: Exception) {
+                currentState.queueSummaries
+            }
+
             // Houd bij wanneer elke speler voor het laatst begon met afspelen, zodat de
             // spelers-dropdown de meest actuele speler bovenaan kan tonen.
             val now = System.currentTimeMillis()
             for (player in filteredPlayers) {
                 val wasPlaying = currentState.players.find { it.id == player.id }
-                    ?.playbackState?.lowercase() == "playing"
-                val isPlaying = player.playbackState?.lowercase() == "playing"
+                    ?.playbackState?.lowercase() == "playing" ||
+                    currentState.queueSummaries[player.id]?.isPlaying == true
+                val isPlaying = player.playbackState?.lowercase() == "playing" ||
+                    queueSummaries[player.id]?.isPlaying == true
                 if (isPlaying && !wasPlaying) {
                     playerLastPlayingAt[player.id] = now
                 }
@@ -371,7 +381,8 @@ class MassViewModel : ViewModel() {
                 it.copy(
                     players = filteredPlayers,
                     selectedPlayerId = selected,
-                    playerLastPlayingAtMs = playerLastPlayingAt.toMap()
+                    playerLastPlayingAtMs = playerLastPlayingAt.toMap(),
+                    queueSummaries = queueSummaries
                 )
             }
 

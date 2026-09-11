@@ -172,6 +172,30 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
         }
     }
 
+    /**
+     * Lichte samenvatting van alle wachtrijen in één call (i.p.v. per speler `player_queues/get`
+     * te moeten doen). Gebruikt om te bepalen welke spelers een wachtrij geladen hebben, ook als
+     * `players/all` geen `active_source` teruggeeft (bv. bij synced groepen zoals "SPZ").
+     */
+    suspend fun getAllQueueSummaries(): List<QueueSummary> {
+        val result = call("player_queues/all")
+        val arr: JSONArray = result.optJSONArray("result") ?: JSONArray()
+        val list = mutableListOf<QueueSummary>()
+        for (i in 0 until arr.length()) {
+            val q = arr.getJSONObject(i)
+            val queueId = q.optString("queue_id")
+            if (queueId.isBlank()) continue
+            list.add(
+                QueueSummary(
+                    queueId = queueId,
+                    hasItems = q.optInt("items", 0) > 0,
+                    isPlaying = q.optString("state").equals("playing", ignoreCase = true)
+                )
+            )
+        }
+        return list
+    }
+
     suspend fun getQueue(playerId: String): QueueState? {
         val queueResult = call("player_queues/get", JSONObject().put("queue_id", playerId)).optJSONObject("result")
             ?: return null

@@ -140,6 +140,13 @@ data class AiRadioQueueStatus(
     val isDjActive: Boolean = false
 )
 
+/** Beknopte status van één speler-wachtrij, voor het sorteren van de spelerslijst. */
+data class QueueSummary(
+    val queueId: String,
+    val hasItems: Boolean,
+    val isPlaying: Boolean
+)
+
 data class QueueState(
     val active: Boolean,
     val currentIndex: Int,
@@ -191,7 +198,9 @@ data class UiState(
     /** Recent langsgekomen radionummers, nieuwste eerst (max 10). */
     val radioHistory: List<RadioHistoryEntry> = emptyList(),
     /** Epoch-ms waarop elke speler voor het laatst begon met afspelen, voor het sorteren van de spelerslijst. */
-    val playerLastPlayingAtMs: Map<String, Long> = emptyMap()
+    val playerLastPlayingAtMs: Map<String, Long> = emptyMap(),
+    /** Wachtrij-status per speler-id, voor het sorteren van de spelerslijst. */
+    val queueSummaries: Map<String, QueueSummary> = emptyMap()
 ) {
     val activeLocation: MassLocation? get() = locations.find { it.id == activeLocationId }
     val homeLat: Double? get() = activeLocation?.lat

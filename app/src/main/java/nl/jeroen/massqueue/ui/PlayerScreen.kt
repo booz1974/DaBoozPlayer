@@ -1307,8 +1307,10 @@ private fun PlayerDropdown(state: UiState, onSelect: (String) -> Unit) {
             !(state.hiddenPlayerIds.contains(player.id) ||
               state.hiddenPlayerIds.contains(player.name.lowercase().trim()))
         }.sortedWith(
-            compareByDescending<MassPlayer> { it.playbackState?.lowercase() == "playing" }
-                .thenByDescending { !it.activeSource.isNullOrBlank() }
+            compareByDescending<MassPlayer> {
+                it.playbackState?.lowercase() == "playing" || state.queueSummaries[it.id]?.isPlaying == true
+            }
+                .thenByDescending { state.queueSummaries[it.id]?.hasItems == true }
                 .thenByDescending { state.playerLastPlayingAtMs[it.id] ?: 0L }
                 .thenBy { formatPlayerName(it).lowercase() }
         )
