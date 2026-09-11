@@ -36,6 +36,13 @@ class MassViewModel : ViewModel() {
     private var pollJob: Job? = null
     private var sleepJob: Job? = null
 
+    /**
+     * Epoch-ms waarop elke speler voor het laatst begon met afspelen (overgang naar "playing").
+     * Gebruikt om de spelers-dropdown op het hoofdscherm te sorteren: de speler waar het meest
+     * recent iets is gestart staat bovenaan.
+     */
+    private val playerLastPlayingAt = mutableMapOf<String, Long>()
+
     /** Push-verbinding met MA; vervangt het snelle pollen. */
     private val eventSocket = MassEventSocket()
     private var wsCollectorStarted = false
@@ -347,8 +354,26 @@ class MassViewModel : ViewModel() {
             val selected = currentState.selectedPlayerId?.let { id ->
                 if (filteredPlayers.any { it.id == id }) id else null
             } ?: playingId ?: filteredPlayers.firstOrNull()?.id
-            
-            _uiState.update { it.copy(players = filteredPlayers, selectedPlayerId = selected) }
+
+            // Houd bij wanneer elke speler voor het laatst begon met afspelen, zodat de
+            // spelers-dropdown de meest actuele speler bovenaan kan tonen.
+            val now = System.currentTimeMillis()
+            for (player in filteredPlayers) {
+                val wasPlaying = currentState.players.find { it.id == player.id }
+                    ?.playbackState?.lowercase() == "playing"
+                val isPlaying = player.playbackState?.lowercase() == "playing"
+                if (isPlaying && !wasPlaying) {
+                    playerLastPlayingAt[player.id] = now
+                }
+            }
+
+            _uiState.update {
+                it.copy(
+                    players = filteredPlayers,
+                    selectedPlayerId = selected,
+                    playerLastPlayingAtMs = playerLastPlayingAt.toMap()
+                )
+            }
 
             // Haal de wachtrij op als er een speler geselecteerd is
             if (selected != null) {

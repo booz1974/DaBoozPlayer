@@ -189,7 +189,9 @@ data class UiState(
     /** Epoch-ms waarop de slaaptimer de muziek pauzeert; null = geen timer actief. */
     val sleepTimerEndsAtMs: Long? = null,
     /** Recent langsgekomen radionummers, nieuwste eerst (max 10). */
-    val radioHistory: List<RadioHistoryEntry> = emptyList()
+    val radioHistory: List<RadioHistoryEntry> = emptyList(),
+    /** Epoch-ms waarop elke speler voor het laatst begon met afspelen, voor het sorteren van de spelerslijst. */
+    val playerLastPlayingAtMs: Map<String, Long> = emptyMap()
 ) {
     val activeLocation: MassLocation? get() = locations.find { it.id == activeLocationId }
     val homeLat: Double? get() = activeLocation?.lat

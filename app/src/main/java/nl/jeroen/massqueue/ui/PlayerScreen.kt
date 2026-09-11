@@ -1300,11 +1300,18 @@ private fun PlayerDropdown(state: UiState, onSelect: (String) -> Unit) {
 
         // Spelers die in de instellingen zijn verborgen, laten we uit de keuzelijst weg
         // (de speler die nu geselecteerd is blijft zichtbaar zodat je kunt wisselen).
+        // Volgorde: de speler waarop het meest actueel iets is gestart staat bovenaan; speelt
+        // er nergens iets, dan staat de speler met een geladen afspeellijst/wachtrij bovenaan.
         val visiblePlayers = state.players.filter { player ->
             player.id == state.selectedPlayerId ||
             !(state.hiddenPlayerIds.contains(player.id) ||
               state.hiddenPlayerIds.contains(player.name.lowercase().trim()))
-        }
+        }.sortedWith(
+            compareByDescending<MassPlayer> { it.playbackState?.lowercase() == "playing" }
+                .thenByDescending { !it.activeSource.isNullOrBlank() }
+                .thenByDescending { state.playerLastPlayingAtMs[it.id] ?: 0L }
+                .thenBy { formatPlayerName(it).lowercase() }
+        )
 
         DropdownMenu(
             expanded = expanded,
