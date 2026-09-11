@@ -349,12 +349,6 @@ class MassViewModel : ViewModel() {
                 }
             }
             
-            // Bepaal welke speler geselecteerd is
-            val playingId = filteredPlayers.firstOrNull { it.playbackState?.lowercase() == "playing" }?.id
-            val selected = currentState.selectedPlayerId?.let { id ->
-                if (filteredPlayers.any { it.id == id }) id else null
-            } ?: playingId ?: filteredPlayers.firstOrNull()?.id
-
             // Samenvatting van alle wachtrijen (o.a. voor synced groepen zoals "SPZ", waar
             // `players/all` geen `active_source` teruggeeft terwijl de wachtrij wel gevuld is).
             val queueSummaries = try {
@@ -362,6 +356,19 @@ class MassViewModel : ViewModel() {
             } catch (e: Exception) {
                 currentState.queueSummaries
             }
+
+            // Bepaal welke speler geselecteerd is. Bij het (opnieuw) kiezen van een standaard-speler
+            // (geen geldige eerdere selectie) volgen we dezelfde prioriteit als de dropdown:
+            // eerst een speler die nu speelt, anders een speler met een geladen wachtrij.
+            fun isPlayingNow(id: String) =
+                filteredPlayers.find { it.id == id }?.playbackState?.lowercase() == "playing" ||
+                    queueSummaries[id]?.isPlaying == true
+
+            val playingId = filteredPlayers.firstOrNull { isPlayingNow(it.id) }?.id
+            val queuedId = filteredPlayers.firstOrNull { queueSummaries[it.id]?.hasItems == true }?.id
+            val selected = currentState.selectedPlayerId?.let { id ->
+                if (filteredPlayers.any { it.id == id }) id else null
+            } ?: playingId ?: queuedId ?: filteredPlayers.firstOrNull()?.id
 
             // Houd bij wanneer elke speler voor het laatst begon met afspelen, zodat de
             // spelers-dropdown de meest actuele speler bovenaan kan tonen.
