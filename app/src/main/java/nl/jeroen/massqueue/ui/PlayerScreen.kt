@@ -90,9 +90,11 @@ private fun itunesSearchTerm(artist: String?, title: String?): String? =
 /**
  * Zoekt het releasejaar van een track op via de iTunes Search API, met cache per term.
  * We vragen meerdere resultaten op, filteren covers/remixes en artiestmismatches eruit,
- * en geven voorrang aan een resultaat waarvan de titel exact overeenkomt (dat is meestal
- * de originele uitgave) boven zomaar het vroegste jaar van wat overblijft — een fout
- * gedateerde remix/compilatie kan anders een vroeger jaar tonen dan het origineel.
+ * en geven voorrang aan resultaten waarvan de titel exact overeenkomt (dat is meestal de
+ * originele uitgave). Binnen die groep kiezen we het vaakst voorkomende jaar in plaats van
+ * zomaar het vroegste: iTunes' eigen catalogus bevat af en toe een los, fout gedateerd
+ * exemplaar (bv. "We Didn't Start the Fire" van Billy Joel staat één keer als 1966 in de
+ * catalogus i.p.v. 1989) en zo'n uitschieter verliest het van de meerderheid.
  */
 private suspend fun lookupItunesYear(artist: String?, title: String?): Int? {
     val searchTerm = itunesSearchTerm(artist, title) ?: return null
@@ -125,8 +127,12 @@ private suspend fun lookupItunesYear(artist: String?, title: String?): Int? {
                 }
                 yr to trackName.equals(title, ignoreCase = true)
             }
-            candidates.filter { it.second }.minOfOrNull { it.first }
-                ?: candidates.minOfOrNull { it.first }
+            val exactYears = candidates.filter { it.second }.map { it.first }
+            val pool = exactYears.ifEmpty { candidates.map { it.first } }
+            // Meest voorkomende jaar wint; bij gelijkstand het vroegste.
+            pool.groupingBy { it }.eachCount().entries
+                .maxWithOrNull(compareBy({ it.value }, { -it.key }))
+                ?.key
         }
         itunesYearCache[searchTerm] = year ?: 0
         year
