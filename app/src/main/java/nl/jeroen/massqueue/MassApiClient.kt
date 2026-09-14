@@ -424,6 +424,22 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
         return StreamMeta(artist, track, album, image)
     }
 
+    /**
+     * Zoekt het jaar van uitgave in de track- of albummetadata (`metadata.year`).
+     * Music Assistant zet dit op zowel het track- als het albumniveau; we proberen
+     * beide en negeren onzinwaarden buiten een plausibel bereik.
+     */
+    private fun extractYear(media: JSONObject?): Int? {
+        if (media == null) return null
+        val candidates = listOf(
+            media.optJSONObject("metadata")?.optInt("year", 0),
+            media.optInt("year", 0),
+            media.optJSONObject("album")?.optJSONObject("metadata")?.optInt("year", 0),
+            media.optJSONObject("album")?.optInt("year", 0)
+        )
+        return candidates.firstOrNull { it != null && it in 1900..2100 }
+    }
+
     private fun parseQueueTrack(item: JSONObject, absoluteIndex: Int): QueueTrack {
         val media = item.optJSONObject("media_item")
         val title = media?.optString("name")?.takeIf { it.isNotBlank() }
@@ -462,7 +478,9 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
             streamArtist = stream?.artist,
             streamTrack = stream?.track,
             streamAlbum = stream?.album,
-            streamImage = stream?.image
+            streamImage = stream?.image,
+            year = extractYear(media),
+            artist = artistNames.joinToString(", ").takeIf { it.isNotBlank() }
         )
     }
 

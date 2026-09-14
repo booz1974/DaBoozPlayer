@@ -33,7 +33,11 @@ data class QueueTrack(
     val streamTrack: String? = null,
     val streamAlbum: String? = null,
     /** Albumhoes van het nu spelende nummer op de radio, indien de stream die meegeeft. */
-    val streamImage: String? = null
+    val streamImage: String? = null,
+    /** Jaar van uitgave, indien Music Assistant dat in de track- of albummetadata meegeeft. */
+    val year: Int? = null,
+    /** Artiestnaam (los van [subtitle], dat ook het album bevat), voor een iTunes-fallbackzoekopdracht. */
+    val artist: String? = null
 ) {
     val isAiRadio: Boolean get() = uri?.startsWith("ai_radio://") == true
 

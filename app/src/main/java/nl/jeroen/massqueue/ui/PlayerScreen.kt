@@ -71,6 +71,70 @@ import sh.calvin.reorderable.rememberReorderableLazyColumnState
  *  recompositie/queue-poll opnieuw dezelfde zoekopdracht doen. "" = niets gevonden. */
 private val itunesArtCache = java.util.concurrent.ConcurrentHashMap<String, String>()
 
+/** Onthoudt het releasejaar per zoekterm (artiest + titel), voor tracks waar
+ *  Music Assistant zelf geen bruikbaar jaartal levert. 0 = niets gevonden. */
+private val itunesYearCache = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
+/** Titelwoorden die op een cover, remix of andere afwijkende heruitgave wijzen —
+ *  die leveren vrijwel nooit het oorspronkelijke releasejaar. Een "remaster" laten we
+ *  bewust wél mee, want in de praktijk staat daar meestal gewoon het originele jaar bij. */
+private val itunesYearSkipWords = listOf(
+    "remix", "mix", "live", "karaoke", "tribute", "cover", "tabata", "workout", "reworked"
+)
+
+private fun itunesSearchTerm(artist: String?, title: String?): String? =
+    listOfNotNull(artist?.takeIf { it.isNotBlank() }, title?.takeIf { it.isNotBlank() })
+        .joinToString(" ")
+        .takeIf { it.isNotBlank() }
+
+/**
+ * Zoekt het releasejaar van een track op via de iTunes Search API, met cache per term.
+ * We vragen meerdere resultaten op, filteren covers/remixes en artiestmismatches eruit,
+ * en geven voorrang aan een resultaat waarvan de titel exact overeenkomt (dat is meestal
+ * de originele uitgave) boven zomaar het vroegste jaar van wat overblijft — een fout
+ * gedateerde remix/compilatie kan anders een vroeger jaar tonen dan het origineel.
+ */
+private suspend fun lookupItunesYear(artist: String?, title: String?): Int? {
+    val searchTerm = itunesSearchTerm(artist, title) ?: return null
+    itunesYearCache[searchTerm]?.let { return it.takeIf { y -> y != 0 } }
+    return try {
+        val encodedTerm = java.net.URLEncoder.encode(searchTerm, "UTF-8")
+        // country=NL: zonder landcode mist de (Amerikaanse) standaardcatalogus regelmatig
+        // de originele Europese uitgave van een track en levert iTunes alleen latere
+        // remixes/compilaties op, met een verkeerd releasejaar tot gevolg.
+        val searchUrl = "https://itunes.apple.com/search?term=$encodedTerm&entity=song&limit=25&country=NL"
+        val year = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val response = okhttp3.OkHttpClient().newCall(
+                okhttp3.Request.Builder().url(searchUrl).build()
+            ).execute().body?.string() ?: return@withContext null
+            val results = org.json.JSONObject(response).optJSONArray("results") ?: return@withContext null
+
+            val candidates = (0 until results.length()).mapNotNull { i ->
+                val r = results.getJSONObject(i)
+                val trackName = r.optString("trackName")
+                val artistName = r.optString("artistName")
+                val yr = r.optString("releaseDate").takeIf { it.isNotBlank() }?.take(4)?.toIntOrNull()
+                    ?: return@mapNotNull null
+                if (itunesYearSkipWords.any { trackName.contains(it, ignoreCase = true) }) return@mapNotNull null
+                if (artist != null &&
+                    !artistName.equals(artist, ignoreCase = true) &&
+                    !artistName.contains(artist, ignoreCase = true) &&
+                    !artist.contains(artistName, ignoreCase = true)
+                ) {
+                    return@mapNotNull null
+                }
+                yr to trackName.equals(title, ignoreCase = true)
+            }
+            candidates.filter { it.second }.minOfOrNull { it.first }
+                ?: candidates.minOfOrNull { it.first }
+        }
+        itunesYearCache[searchTerm] = year ?: 0
+        year
+    } catch (_: Exception) {
+        null
+    }
+}
+
 /** Stabiele sleutel voor een "komt hierna"-item bij het slepen/herordenen. */
 private fun upcomingKey(t: QueueTrack): String = t.queueItemId ?: "next-${t.absoluteIndex}"
 
@@ -793,6 +857,17 @@ private fun Float.asTwoDecimals(): String {
  */
 @Composable
 private fun RadioHistoryRow(entry: RadioHistoryEntry, showDivider: Boolean, onClick: () -> Unit) {
+    // Radiostreams leveren zelf geen releasejaar; we vullen dat aan via een
+    // best-effort iTunes-opzoeking op artiest + titel, met cache per term.
+    val searchTerm = itunesSearchTerm(entry.artist, entry.track)
+    var year by remember(searchTerm) { mutableStateOf(searchTerm?.let { itunesYearCache[it] }?.takeIf { it != 0 }) }
+    LaunchedEffect(searchTerm) {
+        if (year == null && searchTerm != null) {
+            year = lookupItunesYear(entry.artist, entry.track)
+        }
+    }
+    val titleText = if (year != null) "${entry.track ?: "-"} ($year)" else (entry.track ?: "-")
+
     Column {
         Row(
             modifier = Modifier
@@ -810,7 +885,7 @@ private fun RadioHistoryRow(entry: RadioHistoryEntry, showDivider: Boolean, onCl
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    entry.track ?: "-",
+                    titleText,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
@@ -1550,9 +1625,28 @@ private fun NowPlayingHero(
                 isPlaying && !activePlaylistName.isNullOrBlank() -> activePlaylistName.uppercase()
                 else -> "NU SPELEND"
             }
+            // Fallback via iTunes wanneer Music Assistant zelf geen jaartal levert:
+            // altijd voor radiostreams (die hebben nooit trackmetadata), en voor
+            // gewone tracks alleen als de eigen MA-metadata geen jaar bevat.
+            val fallbackArtist = if (hasStreamInfo) track?.streamArtist else track?.artist
+            val fallbackTitle = if (hasStreamInfo) track?.streamTrack else track?.title
+            val fallbackSearchTerm = if (hasStreamInfo || track?.year == null) {
+                itunesSearchTerm(fallbackArtist, fallbackTitle)
+            } else null
+            var fallbackYear by remember(fallbackSearchTerm) {
+                mutableStateOf(fallbackSearchTerm?.let { itunesYearCache[it] }?.takeIf { it != 0 })
+            }
+            LaunchedEffect(fallbackSearchTerm) {
+                if (fallbackYear == null && fallbackSearchTerm != null) {
+                    fallbackYear = lookupItunesYear(fallbackArtist, fallbackTitle)
+                }
+            }
             val mainTitle = when {
                 hasStreamInfo -> track?.streamTrack ?: track?.title ?: "-"
                 else -> track?.title ?: "-"
+            }.let { titleText ->
+                val year = if (hasStreamInfo) fallbackYear else (track?.year ?: fallbackYear)
+                if (year != null) "$titleText ($year)" else titleText
             }
             val secondaryText = when {
                 hasStreamInfo -> track?.streamArtist ?: ""
