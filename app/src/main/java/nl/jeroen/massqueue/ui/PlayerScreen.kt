@@ -90,11 +90,16 @@ private fun itunesSearchTerm(artist: String?, title: String?): String? =
 /**
  * Zoekt het releasejaar van een track op via de iTunes Search API, met cache per term.
  * We vragen meerdere resultaten op, filteren covers/remixes en artiestmismatches eruit,
- * en geven voorrang aan resultaten waarvan de titel exact overeenkomt (dat is meestal de
- * originele uitgave). Binnen die groep kiezen we het vaakst voorkomende jaar in plaats van
- * zomaar het vroegste: iTunes' eigen catalogus bevat af en toe een los, fout gedateerd
- * exemplaar (bv. "We Didn't Start the Fire" van Billy Joel staat één keer als 1966 in de
- * catalogus i.p.v. 1989) en zo'n uitschieter verliest het van de meerderheid.
+ * en kiezen in drie stappen:
+ *  1. Een resultaat waarvan zowel de tracktitel als het albumnaam exact overeenkomen met
+ *     de songtitel (dus het studioalbum dat naar de single is vernoemd) — de sterkste
+ *     aanwijzing voor de originele uitgave (bv. Commodores' album "Nightshift" uit 1985,
+ *     in plaats van de vele fout gedateerde "Anthology"/"Gold"-verzamelalbums uit 1977).
+ *  2. Anders: het vaakst voorkomende jaar onder resultaten met een exact overeenkomende
+ *     titel — dat is meestal de originele uitgave, en een los fout gedateerd exemplaar in
+ *     iTunes' eigen catalogus (bv. "We Didn't Start the Fire" staat één keer als 1966 i.p.v.
+ *     1989) verliest het dan van de meerderheid.
+ *  3. Anders: het vaakst voorkomende jaar onder alle overgebleven resultaten.
  */
 private suspend fun lookupItunesYear(artist: String?, title: String?): Int? {
     val searchTerm = itunesSearchTerm(artist, title) ?: return null
@@ -111,10 +116,13 @@ private suspend fun lookupItunesYear(artist: String?, title: String?): Int? {
             ).execute().body?.string() ?: return@withContext null
             val results = org.json.JSONObject(response).optJSONArray("results") ?: return@withContext null
 
+            data class Candidate(val year: Int, val exactTitle: Boolean, val selfTitledAlbum: Boolean)
+
             val candidates = (0 until results.length()).mapNotNull { i ->
                 val r = results.getJSONObject(i)
                 val trackName = r.optString("trackName")
                 val artistName = r.optString("artistName")
+                val collectionName = r.optString("collectionName")
                 val yr = r.optString("releaseDate").takeIf { it.isNotBlank() }?.take(4)?.toIntOrNull()
                     ?: return@mapNotNull null
                 if (itunesYearSkipWords.any { trackName.contains(it, ignoreCase = true) }) return@mapNotNull null
@@ -125,14 +133,21 @@ private suspend fun lookupItunesYear(artist: String?, title: String?): Int? {
                 ) {
                     return@mapNotNull null
                 }
-                yr to trackName.equals(title, ignoreCase = true)
+                val exactTitle = trackName.equals(title, ignoreCase = true)
+                Candidate(yr, exactTitle, exactTitle && collectionName.equals(title, ignoreCase = true))
             }
-            val exactYears = candidates.filter { it.second }.map { it.first }
-            val pool = exactYears.ifEmpty { candidates.map { it.first } }
-            // Meest voorkomende jaar wint; bij gelijkstand het vroegste.
-            pool.groupingBy { it }.eachCount().entries
+
+            // Meest voorkomende jaar binnen de sterkste beschikbare groep wint;
+            // bij gelijkstand het vroegste.
+            fun majorityYear(years: List<Int>) = years.groupingBy { it }.eachCount().entries
                 .maxWithOrNull(compareBy({ it.value }, { -it.key }))
                 ?.key
+
+            val selfTitledYears = candidates.filter { it.selfTitledAlbum }.map { it.year }
+            val exactYears = candidates.filter { it.exactTitle }.map { it.year }
+            majorityYear(selfTitledYears)
+                ?: majorityYear(exactYears)
+                ?: majorityYear(candidates.map { it.year })
         }
         itunesYearCache[searchTerm] = year ?: 0
         year
