@@ -613,6 +613,34 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
         }
     }
 
+    /** Maakt een nieuwe (lege) playlist aan in de MA-bibliotheek. */
+    suspend fun createPlaylist(name: String): MassPlaylist {
+        val result = call("music/playlists/create_playlist", JSONObject().put("name", name))
+        val obj = result.optJSONObject("result") ?: result
+        val uri = obj.optString("uri").takeIf { it.isNotBlank() }
+            ?: throw MassApiException("Kon playlist niet aanmaken.")
+        return MassPlaylist(
+            uri = uri,
+            name = obj.optString("name", name),
+            trackCount = null,
+            imagePath = resolveImageUrl(obj, null)
+        )
+    }
+
+    /** Voegt track-uri's toe aan een bestaande playlist in de bibliotheek. */
+    suspend fun addPlaylistTracks(dbPlaylistId: String, uris: List<String>) {
+        if (uris.isEmpty()) return
+        call(
+            "music/playlists/add_playlist_tracks",
+            JSONObject().put("db_playlist_id", dbPlaylistId).put("uris", JSONArray(uris))
+        )
+    }
+
+    /** Markeert een media-item (bv. een playlist) als favoriet. */
+    suspend fun addToFavorites(uri: String) {
+        call("music/favorites/add_item", JSONObject().put("item", uri))
+    }
+
     /**
      * Zoekt een nummer in Music Assistant (alle providers) en geeft de URI van de
      * beste match terug, of null als er niets bruikbaars is. Probeert een paar

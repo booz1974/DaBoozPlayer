@@ -68,6 +68,7 @@ class MassViewModel : ViewModel() {
     private var onSaveLocalPlayers: (suspend (Set<String>) -> Unit)? = null
     private var onSaveHiddenPlayers: (suspend (Set<String>) -> Unit)? = null
     private var onSavePlayerAliases: (suspend (Map<String, String>) -> Unit)? = null
+    private var onSaveRadioHistory: (suspend (String?, List<RadioHistoryEntry>) -> Unit)? = null
 
     private var lastLat: Double = 0.0
     private var lastLon: Double = 0.0
@@ -104,12 +105,15 @@ class MassViewModel : ViewModel() {
         localPlayerIds: Set<String> = emptySet(),
         hiddenPlayerIds: Set<String> = emptySet(),
         playerAliases: Map<String, String> = emptyMap(),
+        initialRadioHistoryStationUri: String? = null,
+        initialRadioHistory: List<RadioHistoryEntry> = emptyList(),
         saveCallback: (suspend (String?, String?) -> Unit)? = null,
         saveLocationsCallback: (suspend (List<MassLocation>, String) -> Unit)? = null,
         saveVolumeCallback: (suspend (Set<String>) -> Unit)? = null,
         saveLocalCallback: (suspend (Set<String>) -> Unit)? = null,
         saveHiddenCallback: (suspend (Set<String>) -> Unit)? = null,
-        saveAliasesCallback: (suspend (Map<String, String>) -> Unit)? = null
+        saveAliasesCallback: (suspend (Map<String, String>) -> Unit)? = null,
+        saveRadioHistoryCallback: (suspend (String?, List<RadioHistoryEntry>) -> Unit)? = null
     ) {
         onSavePlaylist = saveCallback
         onSaveLocations = saveLocationsCallback
@@ -117,6 +121,13 @@ class MassViewModel : ViewModel() {
         onSaveLocalPlayers = saveLocalCallback
         onSaveHiddenPlayers = saveHiddenCallback
         onSavePlayerAliases = saveAliasesCallback
+        onSaveRadioHistory = saveRadioHistoryCallback
+        // Alleen bij de allereerste configuratie herstellen we de bewaarde geschiedenis;
+        // een latere reconfiguratie (bv. server-adres wijzigen) mag de lopende lijst niet overschrijven.
+        if (lastRadioStationUri == null && !initialRadioHistoryStationUri.isNullOrBlank()) {
+            lastRadioStationUri = initialRadioHistoryStationUri
+            _uiState.update { it.copy(radioHistory = initialRadioHistory) }
+        }
         if (client == null) {
             client = MassApiClient(baseUrl, authToken)
         } else {
@@ -422,6 +433,10 @@ class MassViewModel : ViewModel() {
                     finalPlaylistName = null
                 } else if (isPaused) {
                     // Bij pauze: behoud de huidige naam
+                } else if (djStatus?.isDjActive == true) {
+                    // AI Radio speelt tracks af vanuit de bron-playlist; de zendernaam
+                    // (gezet bij het starten) mag daardoor niet verward worden met die
+                    // bron-playlist en weggehaald worden.
                 } else if (localUri != null && currentUri != null) {
                     val currentCore = currentUri.substringAfter("://").lowercase()
                     val localCore = localUri.substringAfter("://").lowercase()
@@ -477,10 +492,12 @@ class MassViewModel : ViewModel() {
 
     /**
      * Houdt "Eerder op deze zender" bij. Bij een songwissel op dezelfde zender
-     * schuift het vórige nummer bovenaan de lijst (max 10). Bij zenderwissel of
-     * zodra er geen radio meer speelt wordt de lijst gewist.
+     * schuift het vórige nummer bovenaan de lijst (max 10) en wordt dat bewaard op
+     * schijf, zodat de lijst een herstart van de app overleeft. De lijst wordt alleen
+     * gewist zodra er een ándere zender wordt gestart, niet zodra de radio (tijdelijk)
+     * stopt met spelen.
      */
-    private fun updateRadioHistory(queue: QueueState?) {
+    private suspend fun updateRadioHistory(queue: QueueState?) {
         val cur = queue?.currentItem
         val isRadioNow = cur != null && cur.isRadio && cur.hasStreamInfo
 
@@ -493,17 +510,9 @@ class MassViewModel : ViewModel() {
         }
 
         if (!isRadioNow) {
-            // Speelt er tijdelijk een los nummer (uit de geschiedenis aangeklikt)?
-            // Bewaar de lijst zolang de zender nog in de wachtrij staat óf we nog
-            // op het hervatten wachten (de "add" kan een tel later komen dan de "replace").
-            if (awaitingRadioResume) return
-            if (queue?.items?.any { it.isRadio } == true) return
-            if (currentRadioTrack != null || _uiState.value.radioHistory.isNotEmpty()) {
-                currentRadioTrack = null
-                lastRadioTrackKey = null
-                lastRadioStationUri = null
-                _uiState.update { it.copy(radioHistory = emptyList()) }
-            }
+            // Radio speelt (nog) niet of er speelt tijdelijk een los nummer (uit de
+            // geschiedenis aangeklikt): de lijst blijft gewoon staan tot er een andere
+            // zender gekozen wordt.
             return
         }
 
@@ -530,6 +539,7 @@ class MassViewModel : ViewModel() {
             if (_uiState.value.radioHistory.isNotEmpty()) {
                 _uiState.update { it.copy(radioHistory = emptyList()) }
             }
+            onSaveRadioHistory?.invoke(stationUri, emptyList())
             return
         }
 
@@ -540,6 +550,7 @@ class MassViewModel : ViewModel() {
             if (previous != null) {
                 val next = (listOf(previous) + _uiState.value.radioHistory).take(10)
                 _uiState.update { it.copy(radioHistory = next) }
+                onSaveRadioHistory?.invoke(stationUri, next)
             }
         }
     }
@@ -586,6 +597,63 @@ class MassViewModel : ViewModel() {
             } catch (e: Exception) {
                 pendingRadioResumeUri = null
                 _uiState.update { it.copy(errorMessage = "Nummer afspelen mislukt: ${e.message}") }
+            }
+        }
+    }
+
+    /**
+     * Slaat "Eerder op deze zender" op als een nieuwe playlist in Music Assistant en
+     * markeert die meteen als favoriet. Nummers die niet gevonden worden in MA slaan we
+     * gewoon over.
+     */
+    fun saveRadioHistoryAsPlaylist(name: String) {
+        val c = client ?: return
+        val history = _uiState.value.radioHistory
+        val current = currentRadioTrack
+        if ((history.isEmpty() && current == null) || _uiState.value.savingRadioHistoryPlaylist) return
+        val trimmedName = name.trim().ifBlank { "Radiogeschiedenis" }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(savingRadioHistoryPlaylist = true, errorMessage = null, infoMessage = null) }
+            try {
+                // Oudste eerst, zodat de playlist in de volgorde staat waarin de nummers gehoord zijn.
+                // Het nummer dat nu speelt is het meest recente en komt daarom als laatste.
+                val ordered = history.asReversed() + listOfNotNull(current)
+                val uris = ordered.mapNotNull { entry ->
+                    val query = listOfNotNull(
+                        entry.artist?.takeIf { it.isNotBlank() },
+                        entry.track?.takeIf { it.isNotBlank() }
+                    ).joinToString(" ").trim()
+                    if (query.isBlank()) null else runCatching { c.searchTrackUri(query) }.getOrNull()
+                }
+                if (uris.isEmpty()) {
+                    _uiState.update {
+                        it.copy(
+                            savingRadioHistoryPlaylist = false,
+                            errorMessage = "Geen van de nummers is gevonden in Music Assistant."
+                        )
+                    }
+                    return@launch
+                }
+                val playlist = c.createPlaylist(trimmedName)
+                val dbId = playlist.itemIdFromUri
+                    ?: throw MassApiException("Kon nieuwe playlist niet herkennen.")
+                c.addPlaylistTracks(dbId, uris)
+                c.addToFavorites(playlist.uri)
+
+                val skipped = ordered.size - uris.size
+                val message = if (skipped > 0) {
+                    "\"$trimmedName\" opgeslagen als favoriete playlist ($skipped nummer${if (skipped == 1) "" else "s"} niet gevonden)."
+                } else {
+                    "\"$trimmedName\" opgeslagen als favoriete playlist."
+                }
+                _uiState.update { it.copy(savingRadioHistoryPlaylist = false, infoMessage = message) }
+                delay(4000)
+                _uiState.update { if (it.infoMessage == message) it.copy(infoMessage = null) else it }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(savingRadioHistoryPlaylist = false, errorMessage = "Playlist opslaan mislukt: ${e.message}")
+                }
             }
         }
     }
@@ -718,9 +786,10 @@ class MassViewModel : ViewModel() {
         }
     }
 
-    fun loadFavoritePlaylists() {
+    fun loadFavoritePlaylists(forceRefresh: Boolean = false) {
         val c = client ?: return
-        if (_uiState.value.favoritePlaylists.isNotEmpty() || _uiState.value.favoritesLoading) return
+        if (_uiState.value.favoritesLoading) return
+        if (!forceRefresh && _uiState.value.favoritePlaylists.isNotEmpty()) return
         viewModelScope.launch {
             _uiState.update { it.copy(favoritesLoading = true) }
             try {
@@ -797,8 +866,12 @@ class MassViewModel : ViewModel() {
 
     fun startAiRadio(station: AiRadioStation) {
         val playerId = _uiState.value.selectedPlayerId ?: return
+        lastLocalChangeTime = System.currentTimeMillis()
+        val stationUri = "ai-radio://${station.id}"
+        _uiState.update { it.copy(activePlaylistName = station.name, activePlaylistUri = stationUri) }
         viewModelScope.launch {
             try {
+                onSavePlaylist?.invoke(station.name, stationUri)
                 client?.startAiRadio(playerId, station)
                 delay(500)
                 tick()

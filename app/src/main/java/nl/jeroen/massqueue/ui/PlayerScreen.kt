@@ -217,6 +217,7 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
     var sectionToEdit by remember { mutableStateOf<AiRadioSection?>(null) }
     var showLocationWarning by remember { mutableStateOf(true) }
     var showSleepTimer by remember { mutableStateOf(false) }
+    var showSaveRadioHistory by remember { mutableStateOf(false) }
     val queueListState = rememberLazyListState()
 
     val selectedPlayer = state.players.find { it.id == state.selectedPlayerId }
@@ -387,7 +388,7 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
                     
                     IconButton(onClick = {
                         showFavorites = true
-                        viewModel.loadFavoritePlaylists()
+                        viewModel.loadFavoritePlaylists(forceRefresh = true)
                     }) {
                         Icon(
                             Icons.Filled.Favorite,
@@ -485,6 +486,10 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
                     Spacer(Modifier.height(8.dp))
                     Text(msg, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
+                state.infoMessage?.let { msg ->
+                    Spacer(Modifier.height(8.dp))
+                    Text(msg, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                }
 
                 Spacer(Modifier.height(16.dp))
 
@@ -577,7 +582,27 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
                         val radioInvolved = queue.currentItem?.isRadio == true ||
                             queue.items.any { it.isRadio }
                         if (radioInvolved && state.radioHistory.isNotEmpty()) {
-                            item { SectionLabel("Eerder op deze zender") }
+                            item {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    SectionLabel("Eerder op deze zender")
+                                    IconButton(
+                                        onClick = { showSaveRadioHistory = true },
+                                        enabled = !state.savingRadioHistoryPlaylist,
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.AutoMirrored.Filled.PlaylistAdd,
+                                            contentDescription = "Opslaan als afspeellijst",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
                             itemsIndexed(state.radioHistory) { index, entry ->
                                 RadioHistoryRow(
                                     entry,
@@ -860,6 +885,58 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
             confirmButton = {
                 TextButton(onClick = { showLocationWarning = false }) {
                     Text("Begrepen")
+                }
+            }
+        )
+    }
+
+    if (showSaveRadioHistory) {
+        val currentTrack = state.queue?.currentItem
+        // Zelfde bron als de titel bovenaan: bij een radiostream met live songinfo
+        // staat de echte zendernaam in track.title, niet in activePlaylistName.
+        val stationName = (currentTrack?.title?.takeIf { currentTrack.hasStreamInfo && it.isNotBlank() }
+            ?: activePlaylistName?.takeIf { it.isNotBlank() }
+            ?: "Radio")
+        val dateLabel = remember {
+            java.text.SimpleDateFormat("d MMM HH:mm", java.util.Locale("nl")).format(java.util.Date())
+        }
+        var playlistName by remember { mutableStateOf("$stationName – $dateLabel") }
+        AlertDialog(
+            onDismissRequest = { showSaveRadioHistory = false },
+            title = { Text("Opslaan als afspeellijst") },
+            text = {
+                Column {
+                    Text(
+                        "Slaat \"Eerder op deze zender\" plus het nummer dat nu speelt " +
+                            "(${state.radioHistory.size + 1} nummers) op als nieuwe favoriete playlist " +
+                            "in Music Assistant.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = playlistName,
+                        onValueChange = { playlistName = it },
+                        label = { Text("Naam") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.saveRadioHistoryAsPlaylist(playlistName)
+                        showSaveRadioHistory = false
+                    },
+                    enabled = playlistName.isNotBlank()
+                ) {
+                    Text("Opslaan")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSaveRadioHistory = false }) {
+                    Text("Annuleren")
                 }
             }
         )

@@ -201,6 +201,8 @@ data class UiState(
     val sleepTimerEndsAtMs: Long? = null,
     /** Recent langsgekomen radionummers, nieuwste eerst (max 10). */
     val radioHistory: List<RadioHistoryEntry> = emptyList(),
+    val savingRadioHistoryPlaylist: Boolean = false,
+    val infoMessage: String? = null,
     /** Epoch-ms waarop elke speler voor het laatst begon met afspelen, voor het sorteren van de spelerslijst. */
     val playerLastPlayingAtMs: Map<String, Long> = emptyMap(),
     /** Wachtrij-status per speler-id, voor het sorteren van de spelerslijst. */

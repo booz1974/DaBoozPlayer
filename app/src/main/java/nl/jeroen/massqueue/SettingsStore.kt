@@ -22,6 +22,8 @@ private val KEY_VOLUME_PLAYERS = stringSetPreferencesKey("volume_players")
 private val KEY_LOCAL_PLAYERS = stringSetPreferencesKey("local_players")
 private val KEY_HIDDEN_PLAYERS = stringSetPreferencesKey("hidden_players")
 private val KEY_PLAYER_ALIASES = stringSetPreferencesKey("player_aliases")
+private val KEY_RADIO_HISTORY_STATION = stringPreferencesKey("radio_history_station")
+private val KEY_RADIO_HISTORY_JSON = stringPreferencesKey("radio_history_json")
 
 data class SettingsData(
     val url: String,
@@ -33,7 +35,9 @@ data class SettingsData(
     val volumeControlPlayerIds: Set<String>,
     val localPlayerIds: Set<String>,
     val hiddenPlayerIds: Set<String>,
-    val playerAliases: Map<String, String>
+    val playerAliases: Map<String, String>,
+    val radioHistoryStationUri: String?,
+    val radioHistory: List<RadioHistoryEntry>
 )
 
 class SettingsStore(private val context: Context) {
@@ -64,8 +68,32 @@ class SettingsStore(private val context: Context) {
             )).associate { 
                 val parts = it.split(":", limit = 2)
                 (parts.getOrNull(0) ?: "") to (parts.getOrNull(1) ?: "")
-            }.filter { it.key.isNotBlank() }
+            }.filter { it.key.isNotBlank() },
+            radioHistoryStationUri = prefs[KEY_RADIO_HISTORY_STATION],
+            radioHistory = parseRadioHistory(prefs[KEY_RADIO_HISTORY_JSON])
         )
+    }
+
+    private fun parseRadioHistory(json: String?): List<RadioHistoryEntry> {
+        if (json.isNullOrBlank()) return emptyList()
+        return try {
+            val arr = org.json.JSONArray(json)
+            val list = mutableListOf<RadioHistoryEntry>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                list.add(
+                    RadioHistoryEntry(
+                        artist = obj.optString("artist").takeIf { it.isNotBlank() },
+                        track = obj.optString("track").takeIf { it.isNotBlank() },
+                        album = obj.optString("album").takeIf { it.isNotBlank() },
+                        at = obj.optLong("at", System.currentTimeMillis())
+                    )
+                )
+            }
+            list
+        } catch (e: Exception) {
+            emptyList()
+        }
     }
 
     private fun parseLocations(json: String?, oldLat: Double?, oldLon: Double?): List<MassLocation> {
@@ -159,6 +187,26 @@ class SettingsStore(private val context: Context) {
     suspend fun savePlayerAliases(aliases: Map<String, String>) {
         context.dataStore.edit { prefs ->
             prefs[KEY_PLAYER_ALIASES] = aliases.map { "${it.key}:${it.value}" }.toSet()
+        }
+    }
+
+    suspend fun saveRadioHistory(stationUri: String?, history: List<RadioHistoryEntry>) {
+        val arr = org.json.JSONArray()
+        history.forEach { entry ->
+            arr.put(org.json.JSONObject().apply {
+                put("artist", entry.artist ?: "")
+                put("track", entry.track ?: "")
+                put("album", entry.album ?: "")
+                put("at", entry.at)
+            })
+        }
+        context.dataStore.edit { prefs ->
+            if (stationUri.isNullOrBlank()) {
+                prefs.remove(KEY_RADIO_HISTORY_STATION)
+            } else {
+                prefs[KEY_RADIO_HISTORY_STATION] = stationUri
+            }
+            prefs[KEY_RADIO_HISTORY_JSON] = arr.toString()
         }
     }
 }

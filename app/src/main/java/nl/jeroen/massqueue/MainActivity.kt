@@ -142,12 +142,15 @@ class MainActivity : ComponentActivity() {
                             localPlayerIds = settings.localPlayerIds,
                             hiddenPlayerIds = settings.hiddenPlayerIds,
                             playerAliases = settings.playerAliases,
+                            initialRadioHistoryStationUri = settings.radioHistoryStationUri,
+                            initialRadioHistory = settings.radioHistory,
                             saveCallback = { name, uri -> settingsStore.saveActivePlaylist(name, uri) },
                             saveLocationsCallback = { locs, id -> settingsStore.saveLocations(locs, id) },
                             saveVolumeCallback = { ids -> settingsStore.saveVolumePlayers(ids) },
                             saveLocalCallback = { ids -> settingsStore.saveLocalPlayers(ids) },
                             saveHiddenCallback = { ids -> settingsStore.saveHiddenPlayers(ids) },
-                            saveAliasesCallback = { aliases -> settingsStore.savePlayerAliases(aliases) }
+                            saveAliasesCallback = { aliases -> settingsStore.savePlayerAliases(aliases) },
+                            saveRadioHistoryCallback = { uri, history -> settingsStore.saveRadioHistory(uri, history) }
                         )
                     } else {
                         showSettings = true
@@ -200,7 +203,8 @@ class MainActivity : ComponentActivity() {
                                                 saveVolumeCallback = { ids -> settingsStore.saveVolumePlayers(ids) },
                                                 saveLocalCallback = { ids -> settingsStore.saveLocalPlayers(ids) },
                                                 saveHiddenCallback = { ids -> settingsStore.saveHiddenPlayers(ids) },
-                                                saveAliasesCallback = { al -> settingsStore.savePlayerAliases(al) }
+                                                saveAliasesCallback = { al -> settingsStore.savePlayerAliases(al) },
+                                                saveRadioHistoryCallback = { uri, history -> settingsStore.saveRadioHistory(uri, history) }
                                             )
                                         }
                                     },
