@@ -27,6 +27,8 @@ De app is zich bewust van zijn locatie om de interface schoon en relevant te hou
 ### 2. Geavanceerd Volume-beheer & Aliassen
 - **Hardware Knoppen**: De volumeknoppen van je telefoon bedienen direct de actieve speler. In de instellingen vink je eenvoudig aan voor welke spelers dit actief moet zijn.
 - **Speler Aliassen**: Geef je speakers eigen "roepnamen" (bijv. "Yamaha Living" -> "Woonkamer") die overal in de app worden gebruikt.
+- **Slimme Spelerkeuze**: De dropdown sorteert spelers die nu spelen bovenaan (meest recent gestart eerst), gevolgd door spelers met een geladen wachtrij, en de rest alfabetisch. Bij het eerste opstarten kiest de app om dezelfde reden ook zo'n speler als standaard, in plaats van gewoon de alfabetisch eerste.
+- **Spelers verbergen**: Vink in Instellingen onder "Spelers in keuzelijst" spelers uit die je nooit gebruikt; ze verdwijnen uit de dropdown (de actief geselecteerde speler blijft altijd zichtbaar).
 
 ### 3. Player Experience
 - **Compact & Elegant**: De interface is geoptimaliseerd voor gebruiksgemak met een slanke "Nu Spelend" balk en compacte dropdowns.
@@ -35,6 +37,7 @@ De app is zich bewust van zijn locatie om de interface schoon en relevant te hou
 - **Wachtrij slepen**: Elk "Komt hierna"-nummer heeft een sleep-handle in de lijst zelf; bij loslaten volgt één `player_queues/move_item` met de netto verschuiving.
 - **Muziek Verhuizen (Transfer)**: Verplaats je actuele wachtrij met één klik naar een andere speler.
 - **Casten** 📡: Een cast-knop rechtsboven opent een lijst met apparaten; kies er één en de speler + muziek verhuist ernaartoe (met auto-play). Chromecast-/Google Cast-/Nest-apparaten staan bovenaan met een cast-icoon.
+- **Releasejaar**: Naast de titel van het nu spelende nummer verschijnt, waar bekend, het releasejaar — uit Music Assistant's eigen metadata, of anders (bijv. bij radio) via een gefilterde iTunes-zoekopdracht met caching per zoekterm.
 - **Vloeiende voortgangsbalk**: De positie loopt lokaal door tussen de serverpolls in, zodat de balk soepel meebeweegt in plaats van te verspringen.
 - **Slaaptimer** 🌙: Zet via de maan-knop een timer op 15/30/45/60/90 minuten. Een chip toont de resterende tijd; daarna pauzeert de muziek automatisch.
 - **Lockscreen- & bluetooth-bediening**: Een `MediaSession` toont het nu spelende nummer met hoes in de notificatiebalk en op het lockscreen. Play/pauze/vorige/volgende werken daar en via bluetooth-, koptelefoon- en autoknoppen; de commando's gaan naar Music Assistant en de status komt terug in de notificatie.
@@ -42,7 +45,7 @@ De app is zich bewust van zijn locatie om de interface schoon en relevant te hou
 ### 4. Radio 📻
 - **Nu spelend nummer**: Bij een radiostream toont de app niet alleen de zendernaam, maar ook de live artiest, songtitel en (indien meegestuurd) het album — net als in Music Assistant zelf. Data komt uit `streamdetails.stream_metadata`, met de ICY `stream_title` ("Artiest - Titel") als terugval.
 - **Wisselende hoes**: Standaard de albumhoes van het huidige nummer (met iTunes-terugval als de stream er geen meelevert); elke ~30 seconden verschijnt ~5 seconden lang het zenderlogo.
-- **Eerder op deze zender**: Een lijstje met de laatste ~10 nummers die op de zender voorbijkwamen. Wist zichzelf bij een zenderwissel. Tik op een nummer en de app zoekt het op in Music Assistant, speelt het nu af op de radio-speler en zet de zender er direct achteraan zodat de stream vanzelf hervat.
+- **Eerder op deze zender**: Een lijstje met de laatste ~10 nummers die op de zender voorbijkwamen, inclusief het nummer dat nu speelt. Blijft bewaard tussen app-herstarts en wist zichzelf pas bij een echte zenderwissel (niet tijdens het tijdelijk onderbreken van de stream om een geschiedenisnummer af te spelen). Tik op een nummer en de app zoekt het op in Music Assistant, speelt het nu af op de radio-speler en zet de zender er direct achteraan zodat de stream vanzelf hervat. Via het hartje sla je de geschiedenis (inclusief het huidige nummer) op als favoriete afspeellijst, onder de naam van de zender zoals die nu op het scherm staat.
 
 ### 5. Techniek & Connectiviteit
 - **Rechtstreekse Verbinding**: Commando's gaan via JSON-RPC (`POST /api`) direct naar de Music Assistant server; HA-services via de REST API.
