@@ -548,7 +548,7 @@ class MassViewModel : ViewModel() {
             lastRadioTrackKey = key
             currentRadioTrack = RadioHistoryEntry(cur.streamArtist, cur.streamTrack, cur.streamAlbum)
             if (previous != null) {
-                val next = (listOf(previous) + _uiState.value.radioHistory).take(10)
+                val next = (listOf(previous) + _uiState.value.radioHistory).take(50)
                 _uiState.update { it.copy(radioHistory = next) }
                 onSaveRadioHistory?.invoke(stationUri, next)
             }
