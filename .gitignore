@@ -27,3 +27,7 @@ keystore.properties
 
 # Claude Code / tooling scratch
 /.artifacts/
+
+# Emulator-schermafdrukken en UI-dumps (lokaal testen)
+/dump*.xml
+/mq_*.png
