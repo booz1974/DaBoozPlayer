@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -55,6 +56,7 @@ import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.milliseconds
 import nl.jeroen.massqueue.MassPlayer
 import nl.jeroen.massqueue.effectiveVolume
+import nl.jeroen.massqueue.GROUP_VOLUME_STEP
 import nl.jeroen.massqueue.discoPlayer
 import nl.jeroen.massqueue.isDiscoOn
 import nl.jeroen.massqueue.MassPlaylist
@@ -217,6 +219,7 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
     var showWizard by remember { mutableStateOf(false) }
     var showTransfer by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
+    var showMemberVolumes by remember { mutableStateOf(false) }
     var playlistForOptions by remember { mutableStateOf<MassPlaylist?>(null) }
     var radioForOptions by remember { mutableStateOf<MassRadio?>(null) }
     var searchResultForOptions by remember { mutableStateOf<MassTrack?>(null) }
@@ -610,6 +613,9 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
                                 onNext = { viewModel.sendCommand("players/cmd/next") },
                                 onVolumeDown = { viewModel.setVolume("down") },
                                 onVolumeUp = { viewModel.setVolume("up") },
+                                onVolumeClick = if (selectedPlayer?.isGroup == true) {
+                                    { showMemberVolumes = true }
+                                } else null,
                                 onShuffle = { viewModel.shuffleQueue() },
                                 onClear = { viewModel.clearQueue() }
                             )
@@ -933,6 +939,20 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
         )
     }
 
+    if (showMemberVolumes && selectedPlayer?.isGroup == true) {
+        val discoId = state.discoPlayer()?.id
+        MemberVolumeSheet(
+            group = selectedPlayer,
+            groupVolume = selectedPlayer.effectiveVolume(state.players),
+            members = selectedPlayer.groupMembers
+                .filter { it != selectedPlayer.id && it != discoId }
+                .mapNotNull { id -> state.players.firstOrNull { it.id == id } },
+            playerAliases = state.playerAliases,
+            onDismiss = { showMemberVolumes = false },
+            onSetVolume = { id, level -> viewModel.setMemberVolume(id, level) }
+        )
+    }
+
     if (showSleepTimer) {
         SleepTimerSheet(
             activeEndsAtMs = state.sleepTimerEndsAtMs,
@@ -1162,6 +1182,93 @@ private fun SleepTimerSheet(
  * @param onDismiss Callback when the sheet is dismissed.
  * @param onSelect Callback when a player is selected for transfer.
  */
+/**
+ * Bottom sheet met het volume van elke speler in een groep, los te regelen.
+ * Schuif zet het volume bij loslaten; −/+ gaan in stappen van [GROUP_VOLUME_STEP].
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MemberVolumeSheet(
+    group: MassPlayer,
+    groupVolume: Int?,
+    members: List<MassPlayer>,
+    playerAliases: Map<String, String>,
+    onDismiss: () -> Unit,
+    onSetVolume: (String, Int) -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 32.dp)
+                .fillMaxWidth()
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    "VOLUME PER SPELER",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 2.sp
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "${playerAliases[group.id] ?: group.name} · groep ${groupVolume?.let { "$it%" } ?: "-"}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+
+            members.forEach { member ->
+                val level = if (member.volumeMuted == true) 0 else (member.volumeLevel ?: 0)
+                // Lokale waarde tijdens het slepen, zodat de schuif niet terugspringt door polls.
+                var dragValue by remember(member.id) { mutableStateOf<Float?>(null) }
+                val shown = dragValue?.toInt() ?: level
+
+                Text(
+                    playerAliases[member.id] ?: member.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { onSetVolume(member.id, level - GROUP_VOLUME_STEP) }) {
+                        Icon(Icons.AutoMirrored.Filled.VolumeDown, contentDescription = "Volume omlaag")
+                    }
+                    Slider(
+                        value = dragValue ?: level.toFloat(),
+                        onValueChange = { dragValue = it },
+                        onValueChangeFinished = {
+                            dragValue?.let { onSetVolume(member.id, it.toInt()) }
+                            dragValue = null
+                        },
+                        valueRange = 0f..100f,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = { onSetVolume(member.id, level + GROUP_VOLUME_STEP) }) {
+                        Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = "Volume omhoog")
+                    }
+                    Text(
+                        "$shown%",
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.width(40.dp)
+                    )
+                }
+            }
+
+            if (members.isEmpty()) {
+                Text(
+                    "Geen spelers in deze groep gevonden.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 16.dp)
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TransferSheet(
@@ -1884,7 +1991,9 @@ private fun TransportRow(
     onVolumeDown: () -> Unit,
     onVolumeUp: () -> Unit,
     onShuffle: () -> Unit,
-    onClear: () -> Unit
+    onClear: () -> Unit,
+    /** Tik op het volumegetal; alleen gezet bij groepen (opent volume per speler). */
+    onVolumeClick: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -1984,7 +2093,12 @@ private fun TransportRow(
             Text(
                 volumeLevel?.let { "$it%" } ?: "-",
                 style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.padding(horizontal = 2.dp)
+                color = if (onVolumeClick != null) MaterialTheme.colorScheme.primary else Color.Unspecified,
+                textDecoration = if (onVolumeClick != null) TextDecoration.Underline else null,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .then(if (onVolumeClick != null) Modifier.clickable(onClick = onVolumeClick) else Modifier)
+                    .padding(horizontal = 2.dp, vertical = 6.dp)
             )
             IconButton(
                 onClick = onVolumeUp,

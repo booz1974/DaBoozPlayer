@@ -97,9 +97,11 @@ data class QueueTrack(
 ) {
     val isAiRadio: Boolean get() = uri?.startsWith("ai_radio://") == true
 
+    /** Echte radiostream; AI Radio (ai_radio://, ai-radio://) bevat ook "radio" maar is een playlist met DJ. */
     val isRadio: Boolean
-        get() = mediaType.equals("radio", ignoreCase = true) ||
-            uri?.contains("radio", ignoreCase = true) == true
+        get() = !isAiRadio && uri?.startsWith("ai-radio://") != true &&
+            (mediaType.equals("radio", ignoreCase = true) ||
+                uri?.contains("radio", ignoreCase = true) == true)
 
     /** True zodra er live artiest- of titelinfo van de stream beschikbaar is. */
     val hasStreamInfo: Boolean

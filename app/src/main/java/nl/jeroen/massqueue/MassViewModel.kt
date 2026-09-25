@@ -27,7 +27,7 @@ private const val DEFAULT_HOST_INSTRUCTIONS_NL =
 private const val WIZARD_STATION_NAME = "Wizard"
 
 /** Stapgrootte (procentpunten) voor volume +/-. */
-private const val GROUP_VOLUME_STEP = 5
+const val GROUP_VOLUME_STEP = 5
 
 private const val DEFAULT_SECTION_PROMPT_NL =
     "De vorige track was <prev_songinfo> en de volgende track is <next_songinfo>. " +
@@ -807,6 +807,34 @@ class MassViewModel : ViewModel() {
                     if (muted) {
                         c.sendPlayerCommand("players/cmd/volume_mute", player.id, JSONObject().put("muted", true))
                     }
+                }
+                delay(300)
+                tick()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Volume wijzigen mislukt: ${e.message}") }
+            }
+        }
+    }
+
+    /** Zet het volume van één lid van een groep; 0% is echt stil (mute), net als bij losse spelers. */
+    fun setMemberVolume(memberId: String, level: Int) {
+        val member = _uiState.value.players.firstOrNull { it.id == memberId } ?: return
+        val next = level.coerceIn(0, 100)
+        val muted = next == 0
+        _uiState.update { s ->
+            s.copy(players = s.players.map {
+                if (it.id == memberId) it.copy(volumeLevel = next, volumeMuted = muted) else it
+            })
+        }
+        viewModelScope.launch {
+            val c = client ?: return@launch
+            try {
+                if (member.volumeMuted == true && !muted) {
+                    c.sendPlayerCommand("players/cmd/volume_mute", memberId, JSONObject().put("muted", false))
+                }
+                c.sendPlayerCommand("players/cmd/volume_set", memberId, JSONObject().put("volume_level", next))
+                if (muted) {
+                    c.sendPlayerCommand("players/cmd/volume_mute", memberId, JSONObject().put("muted", true))
                 }
                 delay(300)
                 tick()
