@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -54,6 +55,8 @@ import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.milliseconds
 import nl.jeroen.massqueue.MassPlayer
 import nl.jeroen.massqueue.effectiveVolume
+import nl.jeroen.massqueue.discoPlayer
+import nl.jeroen.massqueue.isDiscoOn
 import nl.jeroen.massqueue.MassPlaylist
 import nl.jeroen.massqueue.MassArtist
 import nl.jeroen.massqueue.MassRadio
@@ -288,7 +291,10 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
                             },
                             modifier = Modifier
                                 .statusBarsPadding()
-                                .padding(start = 125.dp, top = 34.dp),
+                                // Rechts ruimte laten voor de disco-schakelaar
+                                .padding(start = 125.dp, top = 34.dp, end = 84.dp),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
                             style = MaterialTheme.typography.bodyLarge.copy(
                                 color = Color(0xFFFAF3E0), // CassetteCream kleur
                                 fontWeight = FontWeight.Bold,
@@ -296,13 +302,34 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
                             )
                         )
 
-                        // Instellingen-knop rechtsboven in de hoek.
-                        IconButton(
-                            onClick = onOpenSettings,
+                        // Disco-schakelaar rechtsboven in de hoek.
+                        Row(
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
                                 .statusBarsPadding()
-                                .padding(top = 22.dp, end = 6.dp)
+                                .padding(top = 22.dp, end = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                painterResource(R.drawable.ic_disco_ball),
+                                contentDescription = "Disco",
+                                tint = Color(0xFFFAF3E0),
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Switch(
+                                checked = state.isDiscoOn(),
+                                onCheckedChange = { viewModel.setDisco(it) },
+                                enabled = selectedPlayer != null && state.discoPlayer() != null,
+                                modifier = Modifier.scale(0.8f)
+                            )
+                        }
+
+                        // Instellingen-knop rechtsonder op het cassettebandje.
+                        IconButton(
+                            onClick = onOpenSettings,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(bottom = 4.dp, end = 6.dp)
                         ) {
                             Icon(
                                 Icons.Filled.Settings,

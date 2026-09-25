@@ -15,7 +15,11 @@ data class MassPlayer(
     /** Leden van deze groep (group_members / group_childs), leeg voor losse spelers. */
     val groupMembers: List<String> = emptyList(),
     /** Gemiddeld volume van de groep zoals MA het rapporteert. */
-    val groupVolume: Int? = null
+    val groupVolume: Int? = null,
+    /** Leider waar deze speler aan gesynct is, als hij in een groep meespeelt. */
+    val syncedTo: String? = null,
+    /** Groepsspeler (bv. sync group) waar deze speler nu deel van uitmaakt. */
+    val activeGroup: String? = null
 ) {
     /** Groepsspeler (bv. "Woonkamer totaal"): volume_level is daar 0/leeg, group_volume is leidend. */
     val isGroup: Boolean
@@ -45,6 +49,30 @@ fun MassPlayer.effectiveVolume(allPlayers: List<MassPlayer>): Int? {
     groupVolume?.let { return it }
     val memberVolumes = members.mapNotNull { it.volumeLevel }
     return if (memberVolumes.isNotEmpty()) memberVolumes.average().toInt() else volumeLevel
+}
+
+/** Naam van de Hue-lichtspeler die de disco-schakelaar bij de spelende groep voegt. */
+const val DISCO_PLAYER_NAME = "Hue: disco woonkamer"
+
+/** De Hue-discospeler, als MA hem kent. */
+fun UiState.discoPlayer(): MassPlayer? =
+    players.firstOrNull { it.name.equals(DISCO_PLAYER_NAME, ignoreCase = true) }
+
+/**
+ * Groep waar de disco-speler bij moet: de groep/leider waar de geselecteerde speler
+ * in meespeelt, of de geselecteerde speler zelf.
+ */
+fun UiState.discoTargetId(): String? {
+    val selected = players.firstOrNull { it.id == selectedPlayerId } ?: return null
+    return selected.activeGroup ?: selected.syncedTo ?: selected.id
+}
+
+/** Staat disco aan: zit de Hue-speler in de groep van de geselecteerde speler? */
+fun UiState.isDiscoOn(): Boolean {
+    discoPending?.let { return it }
+    val disco = discoPlayer() ?: return false
+    val target = players.firstOrNull { it.id == discoTargetId() } ?: return false
+    return disco.id in target.groupMembers || disco.syncedTo == target.id || disco.activeGroup == target.id
 }
 
 data class QueueTrack(
@@ -266,7 +294,9 @@ data class UiState(
     /** Resultaten van de handmatige zoekfunctie (nummers, artiesten, afspeellijsten). */
     val searchResults: MassSearchResults = MassSearchResults(),
     val searchLoading: Boolean = false,
-    val searchQuery: String = ""
+    val searchQuery: String = "",
+    /** Gewenste disco-stand terwijl het groeperen nog loopt (optimistisch), anders null. */
+    val discoPending: Boolean? = null
 ) {
     val activeLocation: MassLocation? get() = locations.find { it.id == activeLocationId }
     val homeLat: Double? get() = activeLocation?.lat

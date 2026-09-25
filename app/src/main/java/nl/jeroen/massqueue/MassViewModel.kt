@@ -816,6 +816,30 @@ class MassViewModel : ViewModel() {
         }
     }
 
+    /** Voegt de Hue-discospeler toe aan (of haalt hem uit) de groep die nu geselecteerd is. */
+    fun setDisco(on: Boolean) {
+        val state = _uiState.value
+        val disco = state.discoPlayer()
+        val targetId = state.discoTargetId()
+        if (disco == null || targetId == null) {
+            _uiState.update { it.copy(errorMessage = "Speler \"$DISCO_PLAYER_NAME\" niet gevonden") }
+            return
+        }
+        if (disco.id == targetId) return
+        _uiState.update { it.copy(discoPending = on) }
+        viewModelScope.launch {
+            try {
+                client?.setGroupMember(targetId, disco.id, add = on)
+                delay(800)
+                tick()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Disco ${if (on) "aanzetten" else "uitzetten"} mislukt: ${e.message}") }
+            } finally {
+                _uiState.update { it.copy(discoPending = null) }
+            }
+        }
+    }
+
     fun shuffleQueue() {
         val playerId = _uiState.value.selectedPlayerId ?: return
         val currentShuffle = _uiState.value.queue?.shuffleEnabled ?: false

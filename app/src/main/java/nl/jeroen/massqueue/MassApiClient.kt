@@ -149,7 +149,9 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
                     model = model,
                     type = p.optString("type").takeIf { it.isNotBlank() },
                     groupMembers = groupMembers,
-                    groupVolume = if (p.has("group_volume") && !p.isNull("group_volume")) p.optInt("group_volume") else null
+                    groupVolume = if (p.has("group_volume") && !p.isNull("group_volume")) p.optInt("group_volume") else null,
+                    syncedTo = p.optString("synced_to").takeIf { it.isNotBlank() && it != "null" },
+                    activeGroup = p.optString("active_group").takeIf { it.isNotBlank() && it != "null" }
                 )
             )
         }
@@ -872,6 +874,25 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
             put("auto_play", true)
         }
         call("player_queues/transfer", args)
+    }
+
+    /**
+     * Voegt [memberId] toe aan (of haalt hem uit) de groep van [targetId].
+     * Nieuwere MA-versies: `players/cmd/set_members`; oudere: `group_many` / `ungroup`.
+     */
+    suspend fun setGroupMember(targetId: String, memberId: String, add: Boolean) {
+        try {
+            val args = JSONObject().put("target_player", targetId)
+                .put(if (add) "player_ids_to_add" else "player_ids_to_remove", JSONArray().put(memberId))
+            call("players/cmd/set_members", args)
+        } catch (e: Exception) {
+            if (!isInvalidCommand(e)) throw e
+            if (add) {
+                call("players/cmd/group_many", JSONObject().put("target_player", targetId).put("child_player_ids", JSONArray().put(memberId)))
+            } else {
+                call("players/cmd/ungroup", JSONObject().put("player_id", memberId))
+            }
+        }
     }
 
     /** Springt naar een positie (in seconden) in het huidige nummer op deze speler. */
