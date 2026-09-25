@@ -27,7 +27,7 @@ private const val DEFAULT_HOST_INSTRUCTIONS_NL =
 private const val WIZARD_STATION_NAME = "Wizard"
 
 /** Stapgrootte (procentpunten) voor volume +/-. */
-private const val GROUP_VOLUME_STEP = 2
+private const val GROUP_VOLUME_STEP = 5
 
 private const val DEFAULT_SECTION_PROMPT_NL =
     "De vorige track was <prev_songinfo> en de volgende track is <next_songinfo>. " +

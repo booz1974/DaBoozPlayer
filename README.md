@@ -27,7 +27,7 @@ De app is zich bewust van zijn locatie om de interface schoon en relevant te hou
 ### 2. Geavanceerd Volume-beheer & Aliassen
 - **Hardware Knoppen**: De volumeknoppen van je telefoon bedienen direct de actieve speler. In de instellingen vink je eenvoudig aan voor welke spelers dit actief moet zijn.
 - **Groepsvolume**: Bij groepsspelers (sync groups zoals "Eettafel" of "Woonkamer Totaal") regelen de +/−-knoppen het groepsvolume via `players/cmd/group_volume`, net als de schuif in de Music Assistant-webinterface, en tonen ze het echte groepsvolume in plaats van 0%.
-- **Stappen van 2% & echt stil bij 0%**: Volume gaat in stappen van 2%. Op 0% is de speler echt stil: losse spelers worden ook gemute, en bij een groep die al op 0 staat stuurt de app eerst kort 1% zodat de 0 echt bij de speakers aankomt.
+- **Stappen van 5% & echt stil bij 0%**: Volume gaat in stappen van 5%. Op 0% is de speler echt stil: losse spelers worden ook gemute, en bij een groep die al op 0 staat stuurt de app eerst kort 1% zodat de 0 echt bij de speakers aankomt.
 - **Disco-schakelaar** 🪩: Rechtsboven op het cassettebandje staat een schakelaar met een discobal. Aan voegt de Hue-lichtspeler "Hue: disco woonkamer" toe aan de groep van de gekozen speler (zodat de lampen meebewegen op de muziek), uit haalt hem er weer uit. De stand volgt wat Music Assistant rapporteert. Het tandwiel voor de instellingen zit rechtsonder op het bandje.
 - **Speler Aliassen**: Geef je speakers eigen "roepnamen" (bijv. "Yamaha Living" -> "Woonkamer") die overal in de app worden gebruikt.
 - **Slimme Spelerkeuze**: De dropdown sorteert spelers die nu spelen bovenaan (meest recent gestart eerst), gevolgd door spelers met een geladen wachtrij, en de rest alfabetisch. Bij het eerste opstarten kiest de app om dezelfde reden ook zo'n speler als standaard, in plaats van gewoon de alfabetisch eerste.
@@ -39,7 +39,6 @@ De app is zich bewust van zijn locatie om de interface schoon en relevant te hou
 - **Wachtrijbeheer**: Bekijk tot wel 50 nummers in de wachtrij, skip, shuffle (geanimeerde dobbelsteen) of wis de lijst.
 - **Wachtrij slepen**: Elk "Komt hierna"-nummer heeft een sleep-handle in de lijst zelf; bij loslaten volgt één `player_queues/move_item` met de netto verschuiving.
 - **Muziek Verhuizen (Transfer)**: Verplaats je actuele wachtrij met één klik naar een andere speler.
-- **Casten** 📡: Een cast-knop rechtsboven opent een lijst met apparaten; kies er één en de speler + muziek verhuist ernaartoe (met auto-play). Chromecast-/Google Cast-/Nest-apparaten staan bovenaan met een cast-icoon.
 - **Releasejaar**: Naast de titel van het nu spelende nummer verschijnt, waar bekend, het releasejaar — uit Music Assistant's eigen metadata, of anders (bijv. bij radio) via een gefilterde iTunes-zoekopdracht met caching per zoekterm.
 - **Vloeiende voortgangsbalk**: De positie loopt lokaal door tussen de serverpolls in, zodat de balk soepel meebeweegt in plaats van te verspringen.
 - **Spoelen**: Versleep de voortgangsbalk om naar een ander punt in het nummer te springen; het spoel-commando gaat pas naar de server als je loslaat.
