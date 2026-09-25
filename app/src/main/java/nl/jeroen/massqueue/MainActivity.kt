@@ -144,13 +144,17 @@ class MainActivity : ComponentActivity() {
                             playerAliases = settings.playerAliases,
                             initialRadioHistoryStationUri = settings.radioHistoryStationUri,
                             initialRadioHistory = settings.radioHistory,
+                            playlistUsageCounts = settings.playlistUsage,
+                            radioUsageCounts = settings.radioUsage,
                             saveCallback = { name, uri -> settingsStore.saveActivePlaylist(name, uri) },
                             saveLocationsCallback = { locs, id -> settingsStore.saveLocations(locs, id) },
                             saveVolumeCallback = { ids -> settingsStore.saveVolumePlayers(ids) },
                             saveLocalCallback = { ids -> settingsStore.saveLocalPlayers(ids) },
                             saveHiddenCallback = { ids -> settingsStore.saveHiddenPlayers(ids) },
                             saveAliasesCallback = { aliases -> settingsStore.savePlayerAliases(aliases) },
-                            saveRadioHistoryCallback = { uri, history -> settingsStore.saveRadioHistory(uri, history) }
+                            saveRadioHistoryCallback = { uri, history -> settingsStore.saveRadioHistory(uri, history) },
+                            savePlaylistUsageCallback = { usage -> settingsStore.savePlaylistUsage(usage) },
+                            saveRadioUsageCallback = { usage -> settingsStore.saveRadioUsage(usage) }
                         )
                     } else {
                         showSettings = true
@@ -198,13 +202,17 @@ class MainActivity : ComponentActivity() {
                                                 localPlayerIds = state.localPlayerIds,
                                                 hiddenPlayerIds = state.hiddenPlayerIds,
                                                 playerAliases = state.playerAliases,
+                                                playlistUsageCounts = state.playlistUsageCounts,
+                                                radioUsageCounts = state.radioUsageCounts,
                                                 saveCallback = { n, u -> settingsStore.saveActivePlaylist(n, u) },
                                                 saveLocationsCallback = { locs, id -> settingsStore.saveLocations(locs, id) },
                                                 saveVolumeCallback = { ids -> settingsStore.saveVolumePlayers(ids) },
                                                 saveLocalCallback = { ids -> settingsStore.saveLocalPlayers(ids) },
                                                 saveHiddenCallback = { ids -> settingsStore.saveHiddenPlayers(ids) },
                                                 saveAliasesCallback = { al -> settingsStore.savePlayerAliases(al) },
-                                                saveRadioHistoryCallback = { uri, history -> settingsStore.saveRadioHistory(uri, history) }
+                                                saveRadioHistoryCallback = { uri, history -> settingsStore.saveRadioHistory(uri, history) },
+                                                savePlaylistUsageCallback = { usage -> settingsStore.savePlaylistUsage(usage) },
+                                                saveRadioUsageCallback = { usage -> settingsStore.saveRadioUsage(usage) }
                                             )
                                         }
                                     },

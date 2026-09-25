@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 /** Nederlandse standaardteksten voor een nieuwe presentator / een nieuw segment. */
 private const val DEFAULT_HOST_INSTRUCTIONS_NL =
@@ -24,6 +25,9 @@ private const val DEFAULT_HOST_INSTRUCTIONS_NL =
  * dus we overschrijven hierin telkens de bron-playlist, de host en de speler.
  */
 private const val WIZARD_STATION_NAME = "Wizard"
+
+/** Stapgrootte (procentpunten) voor volume +/-. */
+private const val GROUP_VOLUME_STEP = 2
 
 private const val DEFAULT_SECTION_PROMPT_NL =
     "De vorige track was <prev_songinfo> en de volgende track is <next_songinfo>. " +
@@ -69,6 +73,8 @@ class MassViewModel : ViewModel() {
     private var onSaveHiddenPlayers: (suspend (Set<String>) -> Unit)? = null
     private var onSavePlayerAliases: (suspend (Map<String, String>) -> Unit)? = null
     private var onSaveRadioHistory: (suspend (String?, List<RadioHistoryEntry>) -> Unit)? = null
+    private var onSavePlaylistUsage: (suspend (Map<String, Int>) -> Unit)? = null
+    private var onSaveRadioUsage: (suspend (Map<String, Int>) -> Unit)? = null
 
     private var lastLat: Double = 0.0
     private var lastLon: Double = 0.0
@@ -107,13 +113,17 @@ class MassViewModel : ViewModel() {
         playerAliases: Map<String, String> = emptyMap(),
         initialRadioHistoryStationUri: String? = null,
         initialRadioHistory: List<RadioHistoryEntry> = emptyList(),
+        playlistUsageCounts: Map<String, Int> = emptyMap(),
+        radioUsageCounts: Map<String, Int> = emptyMap(),
         saveCallback: (suspend (String?, String?) -> Unit)? = null,
         saveLocationsCallback: (suspend (List<MassLocation>, String) -> Unit)? = null,
         saveVolumeCallback: (suspend (Set<String>) -> Unit)? = null,
         saveLocalCallback: (suspend (Set<String>) -> Unit)? = null,
         saveHiddenCallback: (suspend (Set<String>) -> Unit)? = null,
         saveAliasesCallback: (suspend (Map<String, String>) -> Unit)? = null,
-        saveRadioHistoryCallback: (suspend (String?, List<RadioHistoryEntry>) -> Unit)? = null
+        saveRadioHistoryCallback: (suspend (String?, List<RadioHistoryEntry>) -> Unit)? = null,
+        savePlaylistUsageCallback: (suspend (Map<String, Int>) -> Unit)? = null,
+        saveRadioUsageCallback: (suspend (Map<String, Int>) -> Unit)? = null
     ) {
         onSavePlaylist = saveCallback
         onSaveLocations = saveLocationsCallback
@@ -122,6 +132,8 @@ class MassViewModel : ViewModel() {
         onSaveHiddenPlayers = saveHiddenCallback
         onSavePlayerAliases = saveAliasesCallback
         onSaveRadioHistory = saveRadioHistoryCallback
+        onSavePlaylistUsage = savePlaylistUsageCallback
+        onSaveRadioUsage = saveRadioUsageCallback
         // Alleen bij de allereerste configuratie herstellen we de bewaarde geschiedenis;
         // een latere reconfiguratie (bv. server-adres wijzigen) mag de lopende lijst niet overschrijven.
         if (lastRadioStationUri == null && !initialRadioHistoryStationUri.isNullOrBlank()) {
@@ -153,8 +165,10 @@ class MassViewModel : ViewModel() {
                 volumeControlPlayerIds = volumeControlPlayerIds,
                 localPlayerIds = localPlayerIds,
                 hiddenPlayerIds = hiddenPlayerIds,
-                playerAliases = playerAliases
-            ) 
+                playerAliases = playerAliases,
+                playlistUsageCounts = playlistUsageCounts,
+                radioUsageCounts = radioUsageCounts
+            )
         }
         if (initialPlaylistName != null) {
             lastLocalChangeTime = System.currentTimeMillis()
@@ -740,7 +754,66 @@ class MassViewModel : ViewModel() {
     }
 
     fun setVolume(direction: String) {
-        sendCommand("players/cmd/volume_$direction") 
+        val state = _uiState.value
+        val player = state.players.firstOrNull { it.id == state.selectedPlayerId } ?: return
+        // Zelf rekenen i.p.v. volume_up/down: bij een groep staat volume_level van de groep
+        // zelf altijd op 0, en 0% moet echt stil zijn (mute), niet "zacht".
+        // Optimistisch bijwerken zodat snel tikken optelt.
+        val current = player.effectiveVolume(state.players) ?: 0
+        val next = (current + if (direction == "up") GROUP_VOLUME_STEP else -GROUP_VOLUME_STEP).coerceIn(0, 100)
+        val muted = next == 0
+        _uiState.update { s ->
+            s.copy(players = s.players.map {
+                when {
+                    it.id != player.id -> it
+                    player.isGroup -> it.copy(groupVolume = next)
+                    else -> it.copy(volumeLevel = next, volumeMuted = muted)
+                }
+            })
+        }
+        viewModelScope.launch {
+            val c = client ?: return@launch
+            try {
+                if (player.isGroup) {
+                    // Alleen het groepsvolume, zoals de schuif in de MA-webinterface.
+                    // Leden die nog gemute zijn (bv. door eerdere versies) via de groep unmuten.
+                    val memberMuted = player.groupMembers.any { id -> state.players.firstOrNull { it.id == id }?.volumeMuted == true }
+                    if (memberMuted && !muted) {
+                        c.sendPlayerCommand("players/cmd/volume_mute", player.id, JSONObject().put("muted", false))
+                    }
+                    // Staat MA al op 0 terwijl er nog geluid is, dan geeft een nieuwe 0 niets door:
+                    // eerst kort naar 1% zodat 0 echt een wijziging is.
+                    if (muted && current == 0) {
+                        c.sendPlayerCommand("players/cmd/group_volume", player.id, JSONObject().put("volume_level", 1))
+                    }
+                    c.sendPlayerCommand("players/cmd/group_volume", player.id, JSONObject().put("volume_level", next))
+                    // MA schaalt het groepsvolume relatief per lid; staan alle leden op 0 dan blijft
+                    // het 0. Alleen in dat geval de leden zelf op de nieuwe waarde zetten.
+                    if (!muted && current == 0) {
+                        delay(300)
+                        val refreshed = c.getAllPlayers().firstOrNull { it.id == player.id }
+                        if (refreshed != null && (refreshed.groupVolume ?: 0) == 0) {
+                            for (id in player.groupMembers.filter { it != player.id }) {
+                                c.sendPlayerCommand("players/cmd/volume_set", id, JSONObject().put("volume_level", next))
+                            }
+                        }
+                    }
+                } else {
+                    val wasMuted = player.volumeMuted == true
+                    if (wasMuted && !muted) {
+                        c.sendPlayerCommand("players/cmd/volume_mute", player.id, JSONObject().put("muted", false))
+                    }
+                    c.sendPlayerCommand("players/cmd/volume_set", player.id, JSONObject().put("volume_level", next))
+                    if (muted) {
+                        c.sendPlayerCommand("players/cmd/volume_mute", player.id, JSONObject().put("muted", true))
+                    }
+                }
+                delay(300)
+                tick()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Volume wijzigen mislukt: ${e.message}") }
+            }
+        }
     }
 
     fun shuffleQueue() {
@@ -786,6 +859,46 @@ class MassViewModel : ViewModel() {
         }
     }
 
+    /** Meest gekozen playlist bovenaan; bij gelijke score (of nooit gekozen) alfabetisch op naam. */
+    private fun sortPlaylistsByUsage(playlists: List<MassPlaylist>, usageCounts: Map<String, Int>): List<MassPlaylist> =
+        playlists.sortedWith(
+            compareByDescending<MassPlaylist> { usageCounts[it.uri] ?: 0 }.thenBy { it.name.lowercase() }
+        )
+
+    /** Telt een handmatige playlist-keuze mee en herschikt de favorietenlijst direct op basis daarvan. */
+    private fun recordPlaylistUsage(uri: String?) {
+        if (uri.isNullOrBlank()) return
+        _uiState.update {
+            val updatedCounts = it.playlistUsageCounts.toMutableMap()
+            updatedCounts[uri] = (updatedCounts[uri] ?: 0) + 1
+            it.copy(
+                playlistUsageCounts = updatedCounts,
+                favoritePlaylists = sortPlaylistsByUsage(it.favoritePlaylists, updatedCounts)
+            )
+        }
+        viewModelScope.launch { onSavePlaylistUsage?.invoke(_uiState.value.playlistUsageCounts) }
+    }
+
+    /** Meest gekozen radiozender bovenaan; bij gelijke score (of nooit gekozen) alfabetisch op naam. */
+    private fun sortRadiosByUsage(radios: List<MassRadio>, usageCounts: Map<String, Int>): List<MassRadio> =
+        radios.sortedWith(
+            compareByDescending<MassRadio> { usageCounts[it.uri] ?: 0 }.thenBy { it.name.lowercase() }
+        )
+
+    /** Telt een handmatige radiozender-keuze mee en herschikt de favorietenlijst direct op basis daarvan. */
+    private fun recordRadioUsage(uri: String?) {
+        if (uri.isNullOrBlank()) return
+        _uiState.update {
+            val updatedCounts = it.radioUsageCounts.toMutableMap()
+            updatedCounts[uri] = (updatedCounts[uri] ?: 0) + 1
+            it.copy(
+                radioUsageCounts = updatedCounts,
+                favoriteRadios = sortRadiosByUsage(it.favoriteRadios, updatedCounts)
+            )
+        }
+        viewModelScope.launch { onSaveRadioUsage?.invoke(_uiState.value.radioUsageCounts) }
+    }
+
     fun loadFavoritePlaylists(forceRefresh: Boolean = false) {
         val c = client ?: return
         if (_uiState.value.favoritesLoading) return
@@ -794,7 +907,12 @@ class MassViewModel : ViewModel() {
             _uiState.update { it.copy(favoritesLoading = true) }
             try {
                 val playlists = c.getFavoritePlaylists()
-                _uiState.update { it.copy(favoritePlaylists = playlists, favoritesLoading = false) }
+                _uiState.update {
+                    it.copy(
+                        favoritePlaylists = sortPlaylistsByUsage(playlists, it.playlistUsageCounts),
+                        favoritesLoading = false
+                    )
+                }
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(favoritesLoading = false, errorMessage = "Favorieten laden mislukt: ${e.message}")
@@ -810,7 +928,12 @@ class MassViewModel : ViewModel() {
             _uiState.update { it.copy(radiosLoading = true) }
             try {
                 val radios = c.getFavoriteRadios()
-                _uiState.update { it.copy(favoriteRadios = radios, radiosLoading = false) }
+                _uiState.update {
+                    it.copy(
+                        favoriteRadios = sortRadiosByUsage(radios, it.radioUsageCounts),
+                        radiosLoading = false
+                    )
+                }
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(radiosLoading = false, errorMessage = "Radiozenders laden mislukt: ${e.message}")
@@ -1040,6 +1163,7 @@ class MassViewModel : ViewModel() {
     fun playPlaylistNow(playlist: MassPlaylist) {
         val playerId = _uiState.value.selectedPlayerId ?: return
         lastLocalChangeTime = System.currentTimeMillis()
+        recordPlaylistUsage(playlist.uri)
         _uiState.update { it.copy(activePlaylistName = playlist.name, activePlaylistUri = playlist.uri) }
         viewModelScope.launch {
             onSavePlaylist?.invoke(playlist.name, playlist.uri)
@@ -1061,6 +1185,7 @@ class MassViewModel : ViewModel() {
     fun startWizardRadioWithHost(playerId: String, playlist: MassPlaylist, host: AiRadioHost) {
         val c = client ?: return
         lastLocalChangeTime = System.currentTimeMillis()
+        recordPlaylistUsage(playlist.uri)
         _uiState.update { it.copy(activePlaylistName = playlist.name, activePlaylistUri = playlist.uri) }
         viewModelScope.launch {
             try {
@@ -1094,6 +1219,7 @@ class MassViewModel : ViewModel() {
     fun playPlaylistNext(playlist: MassPlaylist) {
         val playerId = _uiState.value.selectedPlayerId ?: return
         lastLocalChangeTime = System.currentTimeMillis()
+        recordPlaylistUsage(playlist.uri)
         _uiState.update { it.copy(activePlaylistName = playlist.name, activePlaylistUri = playlist.uri) }
         viewModelScope.launch {
             onSavePlaylist?.invoke(playlist.name, playlist.uri)
@@ -1110,6 +1236,7 @@ class MassViewModel : ViewModel() {
     fun playRadioNow(radio: MassRadio) {
         val playerId = _uiState.value.selectedPlayerId ?: return
         lastLocalChangeTime = System.currentTimeMillis()
+        recordRadioUsage(radio.uri)
         _uiState.update { it.copy(activePlaylistName = radio.name, activePlaylistUri = radio.uri) }
         viewModelScope.launch {
             onSavePlaylist?.invoke(radio.name, radio.uri)
@@ -1131,6 +1258,7 @@ class MassViewModel : ViewModel() {
     fun playRadioNext(radio: MassRadio) {
         val playerId = _uiState.value.selectedPlayerId ?: return
         lastLocalChangeTime = System.currentTimeMillis()
+        recordRadioUsage(radio.uri)
         _uiState.update { it.copy(activePlaylistName = radio.name, activePlaylistUri = radio.uri) }
         viewModelScope.launch {
             onSavePlaylist?.invoke(radio.name, radio.uri)
@@ -1140,6 +1268,108 @@ class MassViewModel : ViewModel() {
                 tick()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Vervangen mislukt: ${e.message}") }
+            }
+        }
+    }
+
+    private var searchJob: Job? = null
+
+    /** Zoekt nummers, artiesten en afspeellijsten op via Music Assistant voor de handmatige zoekfunctie. */
+    fun search(query: String) {
+        val c = client
+        searchJob?.cancel()
+        if (c == null || query.isBlank()) {
+            _uiState.update {
+                it.copy(searchQuery = query, searchResults = MassSearchResults(), searchLoading = false)
+            }
+            return
+        }
+        _uiState.update { it.copy(searchQuery = query, searchLoading = true) }
+        searchJob = viewModelScope.launch {
+            try {
+                val results = c.search(query)
+                _uiState.update { it.copy(searchResults = results, searchLoading = false) }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(searchLoading = false, errorMessage = "Zoeken mislukt: ${e.message}")
+                }
+            }
+        }
+    }
+
+    /** Wist de zoekresultaten, bv. bij het sluiten van het zoekscherm. */
+    fun clearSearch() {
+        searchJob?.cancel()
+        _uiState.update { it.copy(searchQuery = "", searchResults = MassSearchResults(), searchLoading = false) }
+    }
+
+    fun playTrackNow(track: MassTrack) {
+        val playerId = _uiState.value.selectedPlayerId ?: return
+        lastLocalChangeTime = System.currentTimeMillis()
+        viewModelScope.launch {
+            try {
+                client?.playMedia(playerId, track.uri, "replace")
+                delay(1000)
+                tick()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Afspelen mislukt: ${e.message}") }
+            }
+        }
+    }
+
+    fun playTrackNext(track: MassTrack) {
+        val playerId = _uiState.value.selectedPlayerId ?: return
+        lastLocalChangeTime = System.currentTimeMillis()
+        viewModelScope.launch {
+            try {
+                client?.playMedia(playerId, track.uri, "replace_next")
+                delay(1200)
+                tick()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Vervangen mislukt: ${e.message}") }
+            }
+        }
+    }
+
+    fun playArtistNow(artist: MassArtist) {
+        val playerId = _uiState.value.selectedPlayerId ?: return
+        lastLocalChangeTime = System.currentTimeMillis()
+        viewModelScope.launch {
+            try {
+                client?.playMedia(playerId, artist.uri, "replace")
+                delay(1000)
+                tick()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Afspelen mislukt: ${e.message}") }
+            }
+        }
+    }
+
+    fun playArtistNext(artist: MassArtist) {
+        val playerId = _uiState.value.selectedPlayerId ?: return
+        lastLocalChangeTime = System.currentTimeMillis()
+        viewModelScope.launch {
+            try {
+                client?.playMedia(playerId, artist.uri, "replace_next")
+                delay(1200)
+                tick()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Vervangen mislukt: ${e.message}") }
+            }
+        }
+    }
+
+    /** Spoelt het huidige nummer op de geselecteerde speler naar [positionSeconds]. */
+    fun seek(positionSeconds: Int) {
+        val playerId = _uiState.value.selectedPlayerId ?: return
+        lastLocalChangeTime = System.currentTimeMillis()
+        viewModelScope.launch {
+            try {
+                client?.seek(playerId, positionSeconds)
+                delay(300)
+                tick()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Spoelen mislukt: ${e.message}") }
             }
         }
     }

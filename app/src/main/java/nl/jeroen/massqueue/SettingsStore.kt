@@ -24,6 +24,8 @@ private val KEY_HIDDEN_PLAYERS = stringSetPreferencesKey("hidden_players")
 private val KEY_PLAYER_ALIASES = stringSetPreferencesKey("player_aliases")
 private val KEY_RADIO_HISTORY_STATION = stringPreferencesKey("radio_history_station")
 private val KEY_RADIO_HISTORY_JSON = stringPreferencesKey("radio_history_json")
+private val KEY_PLAYLIST_USAGE = stringPreferencesKey("playlist_usage_json")
+private val KEY_RADIO_USAGE = stringPreferencesKey("radio_usage_json")
 
 data class SettingsData(
     val url: String,
@@ -37,7 +39,9 @@ data class SettingsData(
     val hiddenPlayerIds: Set<String>,
     val playerAliases: Map<String, String>,
     val radioHistoryStationUri: String?,
-    val radioHistory: List<RadioHistoryEntry>
+    val radioHistory: List<RadioHistoryEntry>,
+    val playlistUsage: Map<String, Int>,
+    val radioUsage: Map<String, Int>
 )
 
 class SettingsStore(private val context: Context) {
@@ -70,8 +74,20 @@ class SettingsStore(private val context: Context) {
                 (parts.getOrNull(0) ?: "") to (parts.getOrNull(1) ?: "")
             }.filter { it.key.isNotBlank() },
             radioHistoryStationUri = prefs[KEY_RADIO_HISTORY_STATION],
-            radioHistory = parseRadioHistory(prefs[KEY_RADIO_HISTORY_JSON])
+            radioHistory = parseRadioHistory(prefs[KEY_RADIO_HISTORY_JSON]),
+            playlistUsage = parseUsageMap(prefs[KEY_PLAYLIST_USAGE]),
+            radioUsage = parseUsageMap(prefs[KEY_RADIO_USAGE])
         )
+    }
+
+    private fun parseUsageMap(json: String?): Map<String, Int> {
+        if (json.isNullOrBlank()) return emptyMap()
+        return try {
+            val obj = org.json.JSONObject(json)
+            obj.keys().asSequence().associateWith { obj.optInt(it, 0) }
+        } catch (e: Exception) {
+            emptyMap()
+        }
     }
 
     private fun parseRadioHistory(json: String?): List<RadioHistoryEntry> {
@@ -207,6 +223,22 @@ class SettingsStore(private val context: Context) {
                 prefs[KEY_RADIO_HISTORY_STATION] = stationUri
             }
             prefs[KEY_RADIO_HISTORY_JSON] = arr.toString()
+        }
+    }
+
+    suspend fun savePlaylistUsage(usage: Map<String, Int>) {
+        val obj = org.json.JSONObject()
+        usage.forEach { (uri, count) -> obj.put(uri, count) }
+        context.dataStore.edit { prefs ->
+            prefs[KEY_PLAYLIST_USAGE] = obj.toString()
+        }
+    }
+
+    suspend fun saveRadioUsage(usage: Map<String, Int>) {
+        val obj = org.json.JSONObject()
+        usage.forEach { (uri, count) -> obj.put(uri, count) }
+        context.dataStore.edit { prefs ->
+            prefs[KEY_RADIO_USAGE] = obj.toString()
         }
     }
 }

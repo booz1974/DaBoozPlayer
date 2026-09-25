@@ -26,6 +26,8 @@ De app is zich bewust van zijn locatie om de interface schoon en relevant te hou
 
 ### 2. Geavanceerd Volume-beheer & Aliassen
 - **Hardware Knoppen**: De volumeknoppen van je telefoon bedienen direct de actieve speler. In de instellingen vink je eenvoudig aan voor welke spelers dit actief moet zijn.
+- **Groepsvolume**: Bij groepsspelers (sync groups zoals "Eettafel" of "Woonkamer Totaal") regelen de +/−-knoppen het groepsvolume via `players/cmd/group_volume`, net als de schuif in de Music Assistant-webinterface, en tonen ze het echte groepsvolume in plaats van 0%.
+- **Stappen van 2% & echt stil bij 0%**: Volume gaat in stappen van 2%. Op 0% is de speler echt stil: losse spelers worden ook gemute, en bij een groep die al op 0 staat stuurt de app eerst kort 1% zodat de 0 echt bij de speakers aankomt.
 - **Speler Aliassen**: Geef je speakers eigen "roepnamen" (bijv. "Yamaha Living" -> "Woonkamer") die overal in de app worden gebruikt.
 - **Slimme Spelerkeuze**: De dropdown sorteert spelers die nu spelen bovenaan (meest recent gestart eerst), gevolgd door spelers met een geladen wachtrij, en de rest alfabetisch. Bij het eerste opstarten kiest de app om dezelfde reden ook zo'n speler als standaard, in plaats van gewoon de alfabetisch eerste.
 - **Spelers verbergen**: Vink in Instellingen onder "Spelers in keuzelijst" spelers uit die je nooit gebruikt; ze verdwijnen uit de dropdown (de actief geselecteerde speler blijft altijd zichtbaar).
@@ -39,6 +41,9 @@ De app is zich bewust van zijn locatie om de interface schoon en relevant te hou
 - **Casten** 📡: Een cast-knop rechtsboven opent een lijst met apparaten; kies er één en de speler + muziek verhuist ernaartoe (met auto-play). Chromecast-/Google Cast-/Nest-apparaten staan bovenaan met een cast-icoon.
 - **Releasejaar**: Naast de titel van het nu spelende nummer verschijnt, waar bekend, het releasejaar — uit Music Assistant's eigen metadata, of anders (bijv. bij radio) via een gefilterde iTunes-zoekopdracht met caching per zoekterm.
 - **Vloeiende voortgangsbalk**: De positie loopt lokaal door tussen de serverpolls in, zodat de balk soepel meebeweegt in plaats van te verspringen.
+- **Spoelen**: Versleep de voortgangsbalk om naar een ander punt in het nummer te springen; het spoel-commando gaat pas naar de server als je loslaat.
+- **Zoeken** 🔍: Zoek op artiest, titel of afspeellijst via Music Assistant (`music/search`). Resultaten staan per categorie (nummers, artiesten, afspeellijsten) en kun je direct afspelen of als volgende in de wachtrij zetten.
+- **Meest gekozen bovenaan**: Favoriete afspeellijsten en radiozenders worden gesorteerd op hoe vaak je ze kiest (daarna alfabetisch). De tellingen blijven bewaard tussen app-herstarts.
 - **Slaaptimer** 🌙: Zet via de maan-knop een timer op 15/30/45/60/90 minuten. Een chip toont de resterende tijd; daarna pauzeert de muziek automatisch.
 - **Lockscreen- & bluetooth-bediening**: Een `MediaSession` toont het nu spelende nummer met hoes in de notificatiebalk en op het lockscreen. Play/pauze/vorige/volgende werken daar en via bluetooth-, koptelefoon- en autoknoppen; de commando's gaan naar Music Assistant en de status komt terug in de notificatie.
 

@@ -9,14 +9,42 @@ data class MassPlayer(
     val activeSource: String? = null,
     /** MA-provider-instance van deze speler, bv. "google_cast", "sonos", "airplay". */
     val provider: String? = null,
-    val model: String? = null
+    val model: String? = null,
+    /** MA-playertype: "player", "group", "stereo_pair", ... */
+    val type: String? = null,
+    /** Leden van deze groep (group_members / group_childs), leeg voor losse spelers. */
+    val groupMembers: List<String> = emptyList(),
+    /** Gemiddeld volume van de groep zoals MA het rapporteert. */
+    val groupVolume: Int? = null
 ) {
+    /** Groepsspeler (bv. "Woonkamer totaal"): volume_level is daar 0/leeg, group_volume is leidend. */
+    val isGroup: Boolean
+        get() = type.equals("group", ignoreCase = true) ||
+            groupMembers.any { it != id }
+
+
     /** Chromecast / Google Cast / Nest audio-apparaat. */
     val isCast: Boolean
         get() = provider?.contains("cast", ignoreCase = true) == true ||
             model?.contains("cast", ignoreCase = true) == true ||
             model?.contains("nest", ignoreCase = true) == true ||
             model?.contains("chromecast", ignoreCase = true) == true
+}
+
+/**
+ * Volume om te tonen/aan te passen. Voor groepen: group_volume, of anders het
+ * gemiddelde van de leden (volume_level van de groep zelf blijft op 0 staan).
+ */
+fun MassPlayer.effectiveVolume(allPlayers: List<MassPlayer>): Int? {
+    if (!isGroup) return if (volumeMuted == true) 0 else volumeLevel
+    val members = groupMembers
+        .filter { it != id }
+        .mapNotNull { memberId -> allPlayers.firstOrNull { it.id == memberId } }
+    // Alle leden gemute = stil = 0%, ook als MA nog een oud group_volume rapporteert
+    if (members.isNotEmpty() && members.all { it.volumeMuted == true }) return 0
+    groupVolume?.let { return it }
+    val memberVolumes = members.mapNotNull { it.volumeLevel }
+    return if (memberVolumes.isNotEmpty()) memberVolumes.average().toInt() else volumeLevel
 }
 
 data class QueueTrack(
@@ -66,6 +94,30 @@ data class MassRadio(
     val name: String,
     val imagePath: String?
 )
+
+/** Eén zoekresultaat uit `music/search`, voor het handmatig opzoeken en afspelen van een nummer. */
+data class MassTrack(
+    val uri: String,
+    val title: String,
+    val subtitle: String,
+    val imagePath: String?
+)
+
+/** Eén artiest-zoekresultaat uit `music/search`. */
+data class MassArtist(
+    val uri: String,
+    val name: String,
+    val imagePath: String?
+)
+
+/** Gecategoriseerde resultaten van de handmatige zoekfunctie. */
+data class MassSearchResults(
+    val tracks: List<MassTrack> = emptyList(),
+    val artists: List<MassArtist> = emptyList(),
+    val playlists: List<MassPlaylist> = emptyList()
+) {
+    val isEmpty: Boolean get() = tracks.isEmpty() && artists.isEmpty() && playlists.isEmpty()
+}
 
 data class MassLocation(
     val id: String,
@@ -206,7 +258,15 @@ data class UiState(
     /** Epoch-ms waarop elke speler voor het laatst begon met afspelen, voor het sorteren van de spelerslijst. */
     val playerLastPlayingAtMs: Map<String, Long> = emptyMap(),
     /** Wachtrij-status per speler-id, voor het sorteren van de spelerslijst. */
-    val queueSummaries: Map<String, QueueSummary> = emptyMap()
+    val queueSummaries: Map<String, QueueSummary> = emptyMap(),
+    /** Hoe vaak elke playlist (op uri) handmatig is gekozen, voor het sorteren van de playlist-lijsten. */
+    val playlistUsageCounts: Map<String, Int> = emptyMap(),
+    /** Hoe vaak elke radiozender (op uri) handmatig is gekozen, voor het sorteren van de radiozenderlijst. */
+    val radioUsageCounts: Map<String, Int> = emptyMap(),
+    /** Resultaten van de handmatige zoekfunctie (nummers, artiesten, afspeellijsten). */
+    val searchResults: MassSearchResults = MassSearchResults(),
+    val searchLoading: Boolean = false,
+    val searchQuery: String = ""
 ) {
     val activeLocation: MassLocation? get() = locations.find { it.id == activeLocationId }
     val homeLat: Double? get() = activeLocation?.lat

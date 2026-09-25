@@ -53,8 +53,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.milliseconds
 import nl.jeroen.massqueue.MassPlayer
+import nl.jeroen.massqueue.effectiveVolume
 import nl.jeroen.massqueue.MassPlaylist
+import nl.jeroen.massqueue.MassArtist
 import nl.jeroen.massqueue.MassRadio
+import nl.jeroen.massqueue.MassSearchResults
+import nl.jeroen.massqueue.MassTrack
 import nl.jeroen.massqueue.MassViewModel
 import nl.jeroen.massqueue.QueueTrack
 import nl.jeroen.massqueue.R
@@ -209,9 +213,12 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
     var showAiDj by remember { mutableStateOf(false) }
     var showWizard by remember { mutableStateOf(false) }
     var showTransfer by remember { mutableStateOf(false) }
-    var showCast by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
     var playlistForOptions by remember { mutableStateOf<MassPlaylist?>(null) }
     var radioForOptions by remember { mutableStateOf<MassRadio?>(null) }
+    var searchResultForOptions by remember { mutableStateOf<MassTrack?>(null) }
+    var searchArtistForOptions by remember { mutableStateOf<MassArtist?>(null) }
+    var searchPlaylistForOptions by remember { mutableStateOf<MassPlaylist?>(null) }
     var stationToEdit by remember { mutableStateOf<AiRadioStation?>(null) }
     var hostToEdit by remember { mutableStateOf<AiRadioHost?>(null) }
     var sectionToEdit by remember { mutableStateOf<AiRadioSection?>(null) }
@@ -289,18 +296,17 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
                             )
                         )
 
-                        // Cast-knop rechtsboven in de hoek: stuurt de speler + muziek
-                        // naar een ander (cast-)apparaat.
+                        // Instellingen-knop rechtsboven in de hoek.
                         IconButton(
-                            onClick = { showCast = true },
+                            onClick = onOpenSettings,
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
                                 .statusBarsPadding()
                                 .padding(top = 22.dp, end = 6.dp)
                         ) {
                             Icon(
-                                Icons.Filled.Cast,
-                                contentDescription = "Casten naar apparaat",
+                                Icons.Filled.Settings,
+                                contentDescription = "Instellingen",
                                 tint = Color(0xFFFAF3E0)
                             )
                         }
@@ -318,6 +324,16 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    IconButton(onClick = {
+                        showSearch = true
+                    }) {
+                        Icon(
+                            Icons.Filled.Search,
+                            contentDescription = "Nummer zoeken",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
                     IconButton(onClick = {
                         showTransfer = true
                     }) {
@@ -403,13 +419,6 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
                             tint = if (state.sleepTimerEndsAtMs != null)
                                 MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(
-                            Icons.Filled.Settings, 
-                            contentDescription = "Instellingen",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -561,12 +570,13 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
                                     } else "${t.subtitle} - ${t.title}"
                                 },
                                 activePlaylistName = activePlaylistName,
-                                elapsedTime = queue.elapsedTime
+                                elapsedTime = queue.elapsedTime,
+                                onSeek = { viewModel.seek(it) }
                             )
                             Spacer(Modifier.height(8.dp))
                             TransportRow(
                                 isPlaying = isPlaying,
-                                volumeLevel = selectedPlayer?.volumeLevel,
+                                volumeLevel = selectedPlayer?.effectiveVolume(state.players),
                                 shuffleEnabled = queue.shuffleEnabled,
                                 onPrevious = { viewModel.sendCommand("players/cmd/previous") },
                                 onPlayPause = { viewModel.sendCommand("players/cmd/play_pause") },
@@ -790,20 +800,82 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
         )
     }
 
-    if (showWizard) {
-        val filteredPlayers = state.players
-            .sortedBy { player ->
-                val alias = state.playerAliases[player.id] ?: player.name
-                when (alias) {
-                    "Woonkamer" -> 1
-                    "Buiten" -> 2
-                    "Binnen & Buiten" -> 3
-                    else -> 4
-                }
-            }
+    if (showSearch && searchResultForOptions == null && searchArtistForOptions == null && searchPlaylistForOptions == null) {
+        SearchSheet(
+            query = state.searchQuery,
+            results = state.searchResults,
+            isLoading = state.searchLoading,
+            onQueryChange = { viewModel.search(it) },
+            onDismiss = {
+                showSearch = false
+                viewModel.clearSearch()
+            },
+            onSelectTrack = { searchResultForOptions = it },
+            onSelectArtist = { searchArtistForOptions = it },
+            onSelectPlaylist = { searchPlaylistForOptions = it }
+        )
+    }
 
+    searchResultForOptions?.let { track ->
+        PlayOptionsSheet(
+            title = track.title,
+            onDismiss = { searchResultForOptions = null },
+            onPlayNow = {
+                searchResultForOptions = null
+                showSearch = false
+                viewModel.clearSearch()
+                viewModel.playTrackNow(track)
+            },
+            onPlayNext = {
+                searchResultForOptions = null
+                showSearch = false
+                viewModel.clearSearch()
+                viewModel.playTrackNext(track)
+            }
+        )
+    }
+
+    searchArtistForOptions?.let { artist ->
+        PlayOptionsSheet(
+            title = artist.name,
+            onDismiss = { searchArtistForOptions = null },
+            onPlayNow = {
+                searchArtistForOptions = null
+                showSearch = false
+                viewModel.clearSearch()
+                viewModel.playArtistNow(artist)
+            },
+            onPlayNext = {
+                searchArtistForOptions = null
+                showSearch = false
+                viewModel.clearSearch()
+                viewModel.playArtistNext(artist)
+            }
+        )
+    }
+
+    searchPlaylistForOptions?.let { playlist ->
+        PlayOptionsSheet(
+            title = playlist.name,
+            onDismiss = { searchPlaylistForOptions = null },
+            onPlayNow = {
+                searchPlaylistForOptions = null
+                showSearch = false
+                viewModel.clearSearch()
+                viewModel.playPlaylistNow(playlist)
+            },
+            onPlayNext = {
+                searchPlaylistForOptions = null
+                showSearch = false
+                viewModel.clearSearch()
+                viewModel.playPlaylistNext(playlist)
+            }
+        )
+    }
+
+    if (showWizard) {
         MusicWizard(
-            players = filteredPlayers,
+            players = visibleSortedPlayers(state),
             playerAliases = state.playerAliases,
             playlists = state.favoritePlaylists,
             isPlaylistsLoading = state.favoritesLoading,
@@ -823,36 +895,12 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
     }
 
     if (showTransfer) {
-        val transferPlayers = state.players
-            .sortedBy { player ->
-                val alias = state.playerAliases[player.id] ?: player.name
-                when (alias) {
-                    "Woonkamer" -> 1
-                    "Buiten" -> 2
-                    "Binnen & Buiten" -> 3
-                    else -> 4
-                }
-            }
-
         TransferSheet(
-            players = transferPlayers,
+            players = visibleSortedPlayers(state),
             playerAliases = state.playerAliases,
             onDismiss = { showTransfer = false },
             onSelect = { player ->
                 showTransfer = false
-                viewModel.transferQueue(player.id)
-            }
-        )
-    }
-
-    if (showCast) {
-        CastSheet(
-            players = state.players,
-            playerAliases = state.playerAliases,
-            currentPlayerId = state.selectedPlayerId,
-            onDismiss = { showCast = false },
-            onSelect = { player ->
-                showCast = false
                 viewModel.transferQueue(player.id)
             }
         )
@@ -1139,77 +1187,6 @@ private fun TransferSheet(
 }
 
 /**
- * Bottom sheet om de huidige speler + muziek naar een ander (cast-)apparaat te
- * sturen. Cast-apparaten staan bovenaan met een cast-icoon; de rest eronder.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun CastSheet(
-    players: List<MassPlayer>,
-    playerAliases: Map<String, String>,
-    currentPlayerId: String?,
-    onDismiss: () -> Unit,
-    onSelect: (MassPlayer) -> Unit
-) {
-    fun label(p: MassPlayer) = playerAliases[p.id] ?: p.name
-    val targets = players
-        .filter { it.id != currentPlayerId }
-        .sortedWith(compareByDescending<MassPlayer> { it.isCast }.thenBy { label(it).lowercase() })
-
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 32.dp)
-                .fillMaxWidth()
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Cast, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    "CASTEN",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontFamily = FontFamily.Monospace,
-                    letterSpacing = 2.sp
-                )
-            }
-
-            Spacer(Modifier.height(16.dp))
-            Text("Speler + muziek overzetten naar:", style = MaterialTheme.typography.bodyMedium)
-            Spacer(Modifier.height(8.dp))
-
-            targets.forEach { player ->
-                ListItem(
-                    headlineContent = { Text(label(player)) },
-                    supportingContent = if (player.isCast) {
-                        { Text("Cast-apparaat", style = MaterialTheme.typography.bodySmall) }
-                    } else null,
-                    leadingContent = {
-                        Icon(
-                            if (player.isCast) Icons.Filled.Cast else Icons.Filled.Speaker,
-                            contentDescription = null,
-                            tint = if (player.isCast) MaterialTheme.colorScheme.primary
-                            else LocalContentColor.current
-                        )
-                    },
-                    trailingContent = { Icon(Icons.Filled.ChevronRight, contentDescription = null) },
-                    modifier = Modifier.clickable { onSelect(player) }
-                )
-            }
-
-            if (targets.isEmpty()) {
-                Text(
-                    "Geen ander apparaat om naar te casten.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 16.dp)
-                )
-            }
-        }
-    }
-}
-
-/**
  * A multi-step wizard to guide the user through selecting a player and starting a playlist.
  *
  * @param players List of available players.
@@ -1418,6 +1395,28 @@ private fun MusicWizard(
 }
 
 /**
+ * De spelerslijst zoals die overal in de app hoort te verschijnen waar je een speler kiest:
+ * verborgen spelers eruit (behalve de nu geselecteerde), meest actueel spelende/gevulde
+ * speler bovenaan, daarna alfabetisch. Zelfde volgorde als de dropdown op het hoofdscherm.
+ */
+private fun visibleSortedPlayers(state: UiState): List<MassPlayer> {
+    fun label(player: MassPlayer) = state.playerAliases[player.id] ?: player.name
+
+    return state.players.filter { player ->
+        player.id == state.selectedPlayerId ||
+        !(state.hiddenPlayerIds.contains(player.id) ||
+          state.hiddenPlayerIds.contains(player.name.lowercase().trim()))
+    }.sortedWith(
+        compareByDescending<MassPlayer> {
+            it.playbackState?.lowercase() == "playing" || state.queueSummaries[it.id]?.isPlaying == true
+        }
+            .thenByDescending { state.queueSummaries[it.id]?.hasItems == true }
+            .thenByDescending { state.playerLastPlayingAtMs[it.id] ?: 0L }
+            .thenBy { label(it).lowercase() }
+    )
+}
+
+/**
  * Dropdown menu for selecting the active player.
  *
  * @param state Current UI state containing players and selection info.
@@ -1428,7 +1427,7 @@ private fun MusicWizard(
 private fun PlayerDropdown(state: UiState, onSelect: (String) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     val selected = state.players.find { it.id == state.selectedPlayerId }
-    
+
     fun formatPlayerName(player: MassPlayer?): String {
         if (player == null) return ""
         return state.playerAliases[player.id] ?: player.name
@@ -1464,29 +1463,14 @@ private fun PlayerDropdown(state: UiState, onSelect: (String) -> Unit) {
                     overflow = TextOverflow.Ellipsis
                 )
                 Icon(
-                    Icons.Filled.ArrowDropDown, 
+                    Icons.Filled.ArrowDropDown,
                     contentDescription = null,
                     modifier = Modifier.size(20.dp)
                 )
             }
         }
 
-        // Spelers die in de instellingen zijn verborgen, laten we uit de keuzelijst weg
-        // (de speler die nu geselecteerd is blijft zichtbaar zodat je kunt wisselen).
-        // Volgorde: de speler waarop het meest actueel iets is gestart staat bovenaan; speelt
-        // er nergens iets, dan staat de speler met een geladen afspeellijst/wachtrij bovenaan.
-        val visiblePlayers = state.players.filter { player ->
-            player.id == state.selectedPlayerId ||
-            !(state.hiddenPlayerIds.contains(player.id) ||
-              state.hiddenPlayerIds.contains(player.name.lowercase().trim()))
-        }.sortedWith(
-            compareByDescending<MassPlayer> {
-                it.playbackState?.lowercase() == "playing" || state.queueSummaries[it.id]?.isPlaying == true
-            }
-                .thenByDescending { state.queueSummaries[it.id]?.hasItems == true }
-                .thenByDescending { state.playerLastPlayingAtMs[it.id] ?: 0L }
-                .thenBy { formatPlayerName(it).lowercase() }
-        )
+        val visiblePlayers = visibleSortedPlayers(state)
 
         DropdownMenu(
             expanded = expanded,
@@ -1634,14 +1618,16 @@ private fun MassImage(
  * @param fallbackTerm Fallback string for image search.
  * @param activePlaylistName Name of the active playlist, if any.
  * @param elapsedTime Current playback position in seconds.
+ * @param onSeek Callback invoked with the new position (seconds) when the user drags the status bar.
  */
 @Composable
 private fun NowPlayingHero(
-    track: QueueTrack?, 
-    isPlaying: Boolean, 
-    fallbackTerm: String?, 
+    track: QueueTrack?,
+    isPlaying: Boolean,
+    fallbackTerm: String?,
     activePlaylistName: String?,
-    elapsedTime: Int?
+    elapsedTime: Int?,
+    onSeek: (Int) -> Unit
 ) {
     // Bij radio met live songinfo wisselen we de hoes af en toe voor het zenderlogo:
     // ~30 s de albumhoes van het nummer, dan ~5 s het logo van het radiostation.
@@ -1817,18 +1803,31 @@ private fun NowPlayingHero(
                     label = "nowPlayingProgress"
                 )
 
-                LinearProgressIndicator(
-                    progress = { animatedProgress },
-                    modifier = Modifier.fillMaxWidth().height(2.dp).clip(RoundedCornerShape(1.dp)),
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.15f),
+                // Zolang de gebruiker het balkje versleept, tonen we die positie i.p.v. de
+                // servertijd; pas bij loslaten sturen we het spoel-commando.
+                var dragFraction by remember { mutableStateOf<Float?>(null) }
+                val displayElapsed = dragFraction?.let { (it * duration).toInt() } ?: shownElapsed
+
+                Slider(
+                    value = dragFraction ?: animatedProgress,
+                    onValueChange = { dragFraction = it },
+                    onValueChangeFinished = {
+                        dragFraction?.let { fraction -> onSeek((fraction * duration).toInt()) }
+                        dragFraction = null
+                    },
+                    modifier = Modifier.fillMaxWidth().height(20.dp),
+                    colors = SliderDefaults.colors(
+                        thumbColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        activeTrackColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        inactiveTrackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.15f)
+                    )
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 1.dp),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        formatDuration(shownElapsed),
+                        formatDuration(displayElapsed),
                         style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
                     )
@@ -2272,6 +2271,182 @@ private fun RadiosSheet(
                 }
             }
         }
+    }
+}
+
+/**
+ * Sheet om handmatig te zoeken in Music Assistant (alle providers): op artiest, titel
+ * of afspeellijst. Resultaten staan gegroepeerd per soort; tikken op een resultaat
+ * opent de opties (nu afspelen / als volgende afspelen).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SearchSheet(
+    query: String,
+    results: MassSearchResults,
+    isLoading: Boolean,
+    onQueryChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onSelectTrack: (MassTrack) -> Unit,
+    onSelectArtist: (MassArtist) -> Unit,
+    onSelectPlaylist: (MassPlaylist) -> Unit
+) {
+    var text by remember { mutableStateOf(query) }
+    LaunchedEffect(text) {
+        delay(400)
+        onQueryChange(text)
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(bottom = 24.dp).heightIn(max = 560.dp)) {
+            Text(
+                "ZOEKEN",
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+            )
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text("Artiest, titel of afspeellijst") },
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (text.isNotBlank()) {
+                        IconButton(onClick = { text = "" }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Wissen")
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)
+            )
+            Spacer(Modifier.height(8.dp))
+            when {
+                isLoading -> {
+                    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                }
+                text.isBlank() -> {
+                    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                        Text(
+                            "Typ een artiest, titel of afspeellijst om te zoeken.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                }
+                results.isEmpty -> {
+                    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                        Text(
+                            "Niks gevonden.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                }
+                else -> {
+                    LazyColumn {
+                        if (results.tracks.isNotEmpty()) {
+                            item { SearchSectionHeader("Nummers") }
+                            items(results.tracks) { track ->
+                                SearchResultRow(
+                                    title = track.title,
+                                    subtitle = track.subtitle,
+                                    imagePath = track.imagePath,
+                                    fallbackTerm = "${track.subtitle} - ${track.title}",
+                                    onClick = { onSelectTrack(track) }
+                                )
+                            }
+                        }
+                        if (results.artists.isNotEmpty()) {
+                            item { SearchSectionHeader("Artiesten") }
+                            items(results.artists) { artist ->
+                                SearchResultRow(
+                                    title = artist.name,
+                                    subtitle = "",
+                                    imagePath = artist.imagePath,
+                                    fallbackTerm = artist.name,
+                                    onClick = { onSelectArtist(artist) }
+                                )
+                            }
+                        }
+                        if (results.playlists.isNotEmpty()) {
+                            item { SearchSectionHeader("Afspeellijsten") }
+                            items(results.playlists) { playlist ->
+                                SearchResultRow(
+                                    title = playlist.name,
+                                    subtitle = playlist.trackCount?.let { "$it nummers" } ?: "",
+                                    imagePath = playlist.imagePath,
+                                    fallbackTerm = playlist.name,
+                                    onClick = { onSelectPlaylist(playlist) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchSectionHeader(text: String) {
+    Text(
+        text.uppercase(),
+        style = MaterialTheme.typography.labelSmall,
+        fontFamily = FontFamily.Monospace,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+    )
+}
+
+@Composable
+private fun SearchResultRow(
+    title: String,
+    subtitle: String,
+    imagePath: String?,
+    fallbackTerm: String?,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        MassImage(
+            model = imagePath,
+            fallbackTerm = fallbackTerm,
+            modifier = Modifier
+                .size(44.dp)
+                .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(2.dp))
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (subtitle.isNotBlank()) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        Icon(
+            Icons.Filled.ChevronRight,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp)
+        )
     }
 }
 

@@ -132,6 +132,10 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
             val activeSource = p.optString("active_source").takeIf { it.isNotBlank() }
             val provider = p.optString("provider").takeIf { it.isNotBlank() }
             val model = p.optJSONObject("device_info")?.optString("model")?.takeIf { it.isNotBlank() }
+            // Nieuwere MA-versies gebruiken group_members, oudere group_childs
+            val membersArr = p.optJSONArray("group_members") ?: p.optJSONArray("group_childs")
+            val groupMembers = if (membersArr == null) emptyList() else
+                (0 until membersArr.length()).mapNotNull { membersArr.optString(it).takeIf { s -> s.isNotBlank() } }
 
             list.add(
                 MassPlayer(
@@ -142,7 +146,10 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
                     volumeMuted = if (p.has("volume_muted")) p.optBoolean("volume_muted") else null,
                     activeSource = activeSource,
                     provider = provider,
-                    model = model
+                    model = model,
+                    type = p.optString("type").takeIf { it.isNotBlank() },
+                    groupMembers = groupMembers,
+                    groupVolume = if (p.has("group_volume") && !p.isNull("group_volume")) p.optInt("group_volume") else null
                 )
             )
         }
@@ -662,15 +669,115 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
         return null
     }
 
-    private fun pickTrackUri(resp: JSONObject, query: String): String? {
+    /**
+     * Zoekt nummers, artiesten en afspeellijsten in Music Assistant (alle providers),
+     * voor de handmatige zoekfunctie in de app. Gebruikt dezelfde arg-varianten als
+     * [searchTrackUri] omdat MA-versies verschillen.
+     */
+    suspend fun search(query: String, limit: Int = 12): MassSearchResults {
+        if (query.isBlank()) return MassSearchResults()
+        val types = JSONArray(listOf("track", "artist", "playlist"))
+        val variants = listOf(
+            JSONObject().put("search_query", query).put("media_types", types).put("limit", limit),
+            JSONObject().put("query", query).put("media_types", types).put("limit", limit)
+        )
+        for (args in variants) {
+            val resp = try { call("music/search", args) } catch (e: Exception) { continue }
+            val tracks = parseSearchTracks(extractResultArray(resp, "tracks"))
+            val artists = parseSearchArtists(extractResultArray(resp, "artists"))
+            val playlists = parseSearchPlaylists(extractResultArray(resp, "playlists"))
+            if (tracks.isNotEmpty() || artists.isNotEmpty() || playlists.isNotEmpty()) {
+                return MassSearchResults(tracks = tracks, artists = artists, playlists = playlists)
+            }
+        }
+        return MassSearchResults()
+    }
+
+    private fun extractResultArray(resp: JSONObject, key: String): JSONArray? {
         val root = resp.opt("result")
-        val tracks: JSONArray = when {
+        if (root is JSONObject) root.optJSONArray(key)?.let { return it }
+        return resp.optJSONArray(key)
+    }
+
+    private fun parseSearchTracks(tracks: JSONArray?): List<MassTrack> {
+        if (tracks == null) return emptyList()
+        val result = mutableListOf<MassTrack>()
+        for (i in 0 until tracks.length()) {
+            val t = tracks.optJSONObject(i) ?: continue
+            val uri = t.optString("uri").takeIf { it.isNotBlank() } ?: continue
+            val title = t.optString("name", "Onbekende track")
+            val artistNames = mutableListOf<String>()
+            t.optJSONArray("artists")?.let { a ->
+                for (j in 0 until a.length()) {
+                    a.optJSONObject(j)?.optString("name")?.takeIf { it.isNotBlank() }
+                        ?.let { artistNames.add(it) }
+                }
+            }
+            val albumName = t.optJSONObject("album")?.optString("name")?.takeIf { it.isNotBlank() }
+            val subtitle = listOfNotNull(
+                artistNames.joinToString(", ").takeIf { it.isNotBlank() },
+                albumName
+            ).joinToString(" - ")
+            result.add(
+                MassTrack(
+                    uri = uri,
+                    title = title,
+                    subtitle = subtitle,
+                    imagePath = resolveImageUrl(t, null)
+                )
+            )
+        }
+        return result
+    }
+
+    private fun parseSearchArtists(artists: JSONArray?): List<MassArtist> {
+        if (artists == null) return emptyList()
+        val result = mutableListOf<MassArtist>()
+        for (i in 0 until artists.length()) {
+            val a = artists.optJSONObject(i) ?: continue
+            val uri = a.optString("uri").takeIf { it.isNotBlank() } ?: continue
+            result.add(
+                MassArtist(
+                    uri = uri,
+                    name = a.optString("name", "Onbekende artiest"),
+                    imagePath = resolveImageUrl(a, null)
+                )
+            )
+        }
+        return result
+    }
+
+    private fun parseSearchPlaylists(playlists: JSONArray?): List<MassPlaylist> {
+        if (playlists == null) return emptyList()
+        val result = mutableListOf<MassPlaylist>()
+        for (i in 0 until playlists.length()) {
+            val p = playlists.optJSONObject(i) ?: continue
+            val uri = p.optString("uri").takeIf { it.isNotBlank() } ?: continue
+            result.add(
+                MassPlaylist(
+                    uri = uri,
+                    name = p.optString("name", "Naamloze playlist"),
+                    trackCount = if (p.has("track_count")) p.optInt("track_count") else null,
+                    imagePath = resolveImageUrl(p, null)
+                )
+            )
+        }
+        return result
+    }
+
+    private fun extractTracksArray(resp: JSONObject): JSONArray? {
+        val root = resp.opt("result")
+        return when {
             root is JSONObject && root.optJSONArray("tracks") != null -> root.getJSONArray("tracks")
             root is JSONObject && root.optJSONArray("items") != null -> root.getJSONArray("items")
             root is JSONArray -> root
             resp.optJSONArray("tracks") != null -> resp.getJSONArray("tracks")
-            else -> return null
+            else -> null
         }
+    }
+
+    private fun pickTrackUri(resp: JSONObject, query: String): String? {
+        val tracks = extractTracksArray(resp) ?: return null
         if (tracks.length() == 0) return null
 
         val q = query.lowercase()
@@ -765,6 +872,15 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
             put("auto_play", true)
         }
         call("player_queues/transfer", args)
+    }
+
+    /** Springt naar een positie (in seconden) in het huidige nummer op deze speler. */
+    suspend fun seek(playerId: String, positionSeconds: Int) {
+        val args = JSONObject().apply {
+            put("queue_id", playerId)
+            put("position", positionSeconds)
+        }
+        call("player_queues/seek", args)
     }
 
     suspend fun announce(playerId: String, uri: String) {
