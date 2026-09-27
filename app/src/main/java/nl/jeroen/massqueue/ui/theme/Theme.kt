@@ -17,9 +17,9 @@ enum class AppTheme(val displayName: String, val description: String) {
 
 // 0. Original Palette (Classic Cream & Light MA Blue Accent)
 private val OriginalColors = lightColorScheme(
-    primary = Color(0xFF00B4D8), // Light MA Cyan/Teal Blue
+    primary = Color(0xFF8DB4BA), // SpinFlow grijsblauw
     onPrimary = Color.White,
-    primaryContainer = Color(0xFF00B4D8),
+    primaryContainer = Color(0xFF8DB4BA),
     onPrimaryContainer = Color(0xFFFAF3E0),
     secondary = Color(0xFFE3A008), // CassetteMustard
     onSecondary = Color(0xFF1C1B19),

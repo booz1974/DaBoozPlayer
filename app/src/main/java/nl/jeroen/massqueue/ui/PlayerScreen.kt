@@ -16,6 +16,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -39,6 +40,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -269,22 +273,30 @@ fun PlayerScreen(
                     if (showCompactHeader) {
                         TopAppBar(
                             title = {
-                                Column {
-                                    Text(
-                                        if (isPlaying && !activePlaylistName.isNullOrBlank()) {
-                                            activePlaylistName.uppercase()
-                                        } else {
-                                            "DA BOOZ PLAYER"
-                                        },
-                                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Image(
+                                        painterResource(R.drawable.spinflow_logo),
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .padding(end = 10.dp)
+                                            .size(width = 43.dp, height = 40.dp)
                                     )
-                                    if (selectedPlayer != null) {
+                                    Column {
                                         Text(
-                                            state.playerAliases[selectedPlayer.id] ?: selectedPlayer.name,
+                                            buildAnnotatedString {
+                                                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("SpinFlow") }
+                                                append(" PLAYER")
+                                            },
+                                            style = MaterialTheme.typography.titleLarge,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            "Music Assistant Queue Control",
                                             style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
@@ -2132,7 +2144,7 @@ private fun NowPlayingHero(
             }
 
             // Progress Slider
-            if (!track?.isAiRadio!! && elapsedTime != null && track.durationSeconds != null && track.durationSeconds > 0) {
+            if (track != null && !track.isAiRadio && elapsedTime != null && track.durationSeconds != null && track.durationSeconds > 0) {
                 Spacer(Modifier.height(8.dp))
 
                 val duration = track.durationSeconds
