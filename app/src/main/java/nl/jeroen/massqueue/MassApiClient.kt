@@ -1,5 +1,6 @@
 package nl.jeroen.massqueue
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -17,7 +18,7 @@ import java.util.concurrent.TimeUnit
  * sessie-cookie-afhankelijkheid van Ingress: gewoon een POST naar
  * <baseUrl>/api op je lokale netwerk of via je eigen tunnel.
  *
- * baseUrl voorbeeld: http://192.168.x.x:8095
+ * baseUrl voorbeeld: https://homeassistant.<tailnet>.ts.net
  */
 class MassApiClient(baseUrl: String, private var authToken: String? = null) {
 
@@ -35,9 +36,10 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
     fun updateConfig(newBaseUrl: String, newToken: String?) {
         var url = newBaseUrl.trim().trimEnd('/')
         if (!url.startsWith("http") && url.isNotBlank()) {
-            url = "http://$url"
+            url = "https://$url"
         }
         _baseUrl = url
+        ServerAuth.update(url, newToken)
         authToken = newToken
         aiRadioOptionsCache = null
     }
@@ -136,14 +138,20 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
             val membersArr = p.optJSONArray("group_members") ?: p.optJSONArray("group_childs")
             val groupMembers = if (membersArr == null) emptyList() else
                 (0 until membersArr.length()).mapNotNull { membersArr.optString(it).takeIf { s -> s.isNotBlank() } }
+            // null = MA stuurt het veld niet mee (oudere versie): dan weten we het niet.
+            val canGroupWith = p.optJSONArray("can_group_with")?.let { arr ->
+                (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } }.toSet()
+            }
 
             list.add(
                 MassPlayer(
                     id = id,
                     name = p.optString("display_name", p.optString("name", id)),
                     playbackState = p.optString("playback_state", null),
-                    volumeLevel = if (p.has("volume_level")) p.optInt("volume_level") else null,
-                    volumeMuted = if (p.has("volume_muted")) p.optBoolean("volume_muted") else null,
+                    // JSON-null (bv. de Hue-lamp: geen volume) blijft null i.p.v. 0
+                    volumeLevel = if (p.has("volume_level") && !p.isNull("volume_level")) p.optInt("volume_level") else null,
+                    volumeMuted = if (p.has("volume_muted") && !p.isNull("volume_muted")) p.optBoolean("volume_muted") else null,
+                    powered = if (p.has("powered") && !p.isNull("powered")) p.optBoolean("powered") else null,
                     activeSource = activeSource,
                     provider = provider,
                     model = model,
@@ -151,7 +159,8 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
                     groupMembers = groupMembers,
                     groupVolume = if (p.has("group_volume") && !p.isNull("group_volume")) p.optInt("group_volume") else null,
                     syncedTo = p.optString("synced_to").takeIf { it.isNotBlank() && it != "null" },
-                    activeGroup = p.optString("active_group").takeIf { it.isNotBlank() && it != "null" }
+                    activeGroup = p.optString("active_group").takeIf { it.isNotBlank() && it != "null" },
+                    canGroupWith = canGroupWith
                 )
             )
         }
@@ -313,13 +322,8 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
             finalUrl = "${_baseUrl.trimEnd('/')}${if (pathOnly.startsWith("/")) "" else "/"}$pathOnly"
         }
         
-        // 2. VOEG TOKEN ALTIJD TOE AAN LOKALE LINKS
-        // Voor plaatjes van onze eigen server is dit de meest betrouwbare methode.
-        if (finalUrl.startsWith(_baseUrl) && !authToken.isNullOrBlank() && !finalUrl.contains("token=")) {
-            val separator = if (finalUrl.contains("?")) "&" else "?"
-            finalUrl = "$finalUrl${separator}token=$authToken"
-        }
-        
+        // 2. Het token gaat als Authorization-header mee via ServerAuth (zie MassApp.kt),
+        // niet als ?token= in de URL.
         return finalUrl
     }
 
@@ -518,80 +522,38 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
 
     suspend fun getFavoriteRadios(): List<MassRadio> {
         val list = mutableListOf<MassRadio>()
-        
-        // Poging 1: music/radios/library_items (zoals gespecificeerd voor JSON-RPC)
-        try {
-            val args = JSONObject().apply {
-                put("favorite", true)
-                put("order_by", "name")
-            }
-            val resp = call("music/radios/library_items", args)
-            parseRadioItems(resp, list)
-        } catch (ignore: Exception) {}
-
-        // Poging 2: music/radios/library_items ZONDER favorite filter (client-side filtering fallback)
-        if (list.isEmpty()) {
+        // MA-versies verschillen in endpoint-namen, dus we proberen er een paar. Mislukt
+        // élke poging (bv. server onbereikbaar), dan gooien we de laatste fout door in
+        // plaats van stil een lege lijst te tonen.
+        var anySucceeded = false
+        var lastError: Exception? = null
+        suspend fun attempt(command: String, args: JSONObject, filterFavorites: Boolean = false) {
             try {
-                val resp = call("music/radios/library_items", JSONObject().put("limit", 200))
-                parseRadioItems(resp, list, filterFavorites = true)
-            } catch (ignore: Exception) {}
-        }
-
-        // Poging 3: music/library (overeenkomstig met HA actie)
-        if (list.isEmpty()) {
-            try {
-                val args = JSONObject().apply {
-                    put("media_type", "radio")
-                    put("favorite", true)
-                }
-                val resp = call("music/library", args)
-                parseRadioItems(resp, list)
-            } catch (ignore: Exception) {}
-        }
-
-        // Poging 2: music/radio/library_items
-        if (list.isEmpty()) {
-            try {
-                val resp = call("music/radio/library_items", JSONObject().put("favorite", true).put("limit", 100))
-                parseRadioItems(resp, list)
-            } catch (ignore: Exception) {}
-        }
-
-        // Poging 3: music/radio/all
-        if (list.isEmpty()) {
-            try {
-                val resp = call("music/radio/all", JSONObject().put("favorite", true).put("limit", 100))
-                parseRadioItems(resp, list)
-            } catch (ignore: Exception) {}
-        }
-
-        // Poging 4: music/radio_stations varianten
-        if (list.isEmpty()) {
-            try {
-                val resp = call("music/radio_stations/library_items", JSONObject().put("favorite", true).put("limit", 100))
-                parseRadioItems(resp, list)
-            } catch (ignore: Exception) {}
-            
-            if (list.isEmpty()) {
-                try {
-                    val resp = call("music/radio_stations/all", JSONObject().put("favorite", true).put("limit", 100))
-                    parseRadioItems(resp, list)
-                } catch (ignore: Exception) {}
-            }
-        }
-        
-        // Fallback: Als favorieten leeg zijn, probeer ALLE radiozenders uit de library
-        if (list.isEmpty()) {
-            val fallbacks = listOf("music/radio/library_items", "music/radio_stations/library_items", "music/radio/all", "music/radio_stations/all")
-            for (fb in fallbacks) {
-                try {
-                    val resp = call(fb, JSONObject().put("limit", 100))
-                    parseRadioItems(resp, list)
-                    if (list.isNotEmpty()) break
-                } catch (ignore: Exception) {}
+                parseRadioItems(call(command, args), list, filterFavorites)
+                anySucceeded = true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                lastError = e
             }
         }
 
+        attempt("music/radios/library_items", JSONObject().put("favorite", true).put("order_by", "name"))
+        // Zonder favorite-filter, en dan client-side filteren
+        if (list.isEmpty()) attempt("music/radios/library_items", JSONObject().put("limit", 200), filterFavorites = true)
+        // Overeenkomstig met de HA-actie
+        if (list.isEmpty()) attempt("music/library", JSONObject().put("media_type", "radio").put("favorite", true))
+        for (cmd in listOf("music/radio/library_items", "music/radio/all", "music/radio_stations/library_items", "music/radio_stations/all")) {
+            if (list.isNotEmpty()) break
+            attempt(cmd, JSONObject().put("favorite", true).put("limit", 100))
+        }
+        // Fallback: als favorieten leeg zijn, ALLE radiozenders uit de library
+        for (cmd in listOf("music/radio/library_items", "music/radio_stations/library_items", "music/radio/all", "music/radio_stations/all")) {
+            if (list.isNotEmpty()) break
+            attempt(cmd, JSONObject().put("limit", 100))
+        }
+
+        if (!anySucceeded) lastError?.let { throw it }
         return list.distinctBy { it.uri }.sortedBy { it.name.lowercase() }
     }
 
@@ -664,12 +626,28 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
             JSONObject().put("search_query", query).put("limit", 8),
             JSONObject().put("name", query).put("media_types", trackTypes).put("limit", 8)
         )
+        var anySucceeded = false
+        var lastError: Exception? = null
         for (args in variants) {
-            val resp = try { call("music/search", args) } catch (e: Exception) { continue }
+            val resp = searchAttempt(args) { lastError = it } ?: continue
+            anySucceeded = true
             pickTrackUri(resp, query)?.let { return it }
         }
+        // Alle varianten faalden (bv. server weg): dat is iets anders dan "niet gevonden".
+        if (!anySucceeded) lastError?.let { throw it }
         return null
     }
+
+    /** Eén music/search-poging; geeft null (en meldt de fout) als deze arg-vorm faalt. */
+    private suspend fun searchAttempt(args: JSONObject, onError: (Exception) -> Unit): JSONObject? =
+        try {
+            call("music/search", args)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            onError(e)
+            null
+        }
 
     /**
      * Zoekt nummers, artiesten en afspeellijsten in Music Assistant (alle providers),
@@ -683,8 +661,11 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
             JSONObject().put("search_query", query).put("media_types", types).put("limit", limit),
             JSONObject().put("query", query).put("media_types", types).put("limit", limit)
         )
+        var anySucceeded = false
+        var lastError: Exception? = null
         for (args in variants) {
-            val resp = try { call("music/search", args) } catch (e: Exception) { continue }
+            val resp = searchAttempt(args) { lastError = it } ?: continue
+            anySucceeded = true
             val tracks = parseSearchTracks(extractResultArray(resp, "tracks"))
             val artists = parseSearchArtists(extractResultArray(resp, "artists"))
             val playlists = parseSearchPlaylists(extractResultArray(resp, "playlists"))
@@ -692,6 +673,7 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
                 return MassSearchResults(tracks = tracks, artists = artists, playlists = playlists)
             }
         }
+        if (!anySucceeded) lastError?.let { throw it }
         return MassSearchResults()
     }
 
@@ -933,10 +915,10 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
         for (cmd in variants) {
             try {
                 val resp = call(cmd, args)
-                android.util.Log.d("MassAiRadio", "OK '$cmd' args=$args -> $resp")
+                if (BuildConfig.DEBUG) android.util.Log.d("MassAiRadio", "OK '$cmd' args=$args -> $resp")
                 return resp
             } catch (e: Exception) {
-                android.util.Log.w("MassAiRadio", "FAIL '$cmd' args=$args : ${e.message}")
+                if (BuildConfig.DEBUG) android.util.Log.w("MassAiRadio", "FAIL '$cmd' args=$args : ${e.message}")
                 if (firstError == null) firstError = e
                 if (realError == null && !isInvalidCommand(e)) realError = e
             }
@@ -1065,7 +1047,7 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
             try {
                 val resp = callAiRadio(cmd(suffix), args)
                 aiRadioSaveWrapKey[family] = key
-                android.util.Log.d("MassAiRadio", "save '$suffix' OK met wrap='${key.ifEmpty { "(plat)" }}'")
+                if (BuildConfig.DEBUG) android.util.Log.d("MassAiRadio", "save '$suffix' OK met wrap='${key.ifEmpty { "(plat)" }}'")
                 return resp
             } catch (e: Exception) {
                 last = e
@@ -1191,7 +1173,7 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
         if (engines.isEmpty()) {
             for (c in listOf("tts/engine/list", "tts/providers", "providers", "config/providers")) {
                 val resp = runCatching { call(c) }.getOrNull() ?: continue
-                android.util.Log.d("MassAiRadio", "options via '$c' -> $resp")
+                if (BuildConfig.DEBUG) android.util.Log.d("MassAiRadio", "options via '$c' -> $resp")
                 engines = extractTtsProviders(resp)
                 if (engines.isNotEmpty()) break
             }

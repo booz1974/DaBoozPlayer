@@ -1,6 +1,7 @@
 package nl.jeroen.massqueue
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -26,6 +27,10 @@ private val KEY_RADIO_HISTORY_STATION = stringPreferencesKey("radio_history_stat
 private val KEY_RADIO_HISTORY_JSON = stringPreferencesKey("radio_history_json")
 private val KEY_PLAYLIST_USAGE = stringPreferencesKey("playlist_usage_json")
 private val KEY_RADIO_USAGE = stringPreferencesKey("radio_usage_json")
+private val KEY_THEME = stringPreferencesKey("app_theme")
+private val KEY_COMPACT_HEADER = booleanPreferencesKey("compact_header")
+private val KEY_DISCO_PLAYER = stringPreferencesKey("disco_player_id")
+private val KEY_PINNED_PLAYERS = stringSetPreferencesKey("pinned_players")
 
 data class SettingsData(
     val url: String,
@@ -41,42 +46,72 @@ data class SettingsData(
     val radioHistoryStationUri: String?,
     val radioHistory: List<RadioHistoryEntry>,
     val playlistUsage: Map<String, Int>,
-    val radioUsage: Map<String, Int>
+    val radioUsage: Map<String, Int>,
+    val selectedTheme: String,
+    val showCompactHeader: Boolean,
+    val discoPlayerId: String?,
+    val pinnedPlayerIds: Set<String>
 )
 
 class SettingsStore(private val context: Context) {
 
+    /**
+     * Eenmalige migratie: vroeger stonden deze spelers als hardcoded standaard in de code en werden
+     * ze pas opgeslagen na een wijziging. Bestaande installaties (server al ingesteld) krijgen ze nu
+     * vast in DataStore; nieuwe installaties beginnen leeg. Mag weg zodra alle apparaten bijgewerkt zijn.
+     */
+    private suspend fun migrateLegacyPlayerDefaults() {
+        val prefs = context.dataStore.data.first()
+        if (prefs[KEY_URL].isNullOrBlank()) return
+        val legacyPlayers = setOf("tuin", "yamaha living", "binnen&buiten", "kijkpaal")
+        context.dataStore.edit {
+            if (it[KEY_VOLUME_PLAYERS] == null) it[KEY_VOLUME_PLAYERS] = legacyPlayers
+            if (it[KEY_LOCAL_PLAYERS] == null) it[KEY_LOCAL_PLAYERS] = legacyPlayers
+            if (it[KEY_PLAYER_ALIASES] == null) it[KEY_PLAYER_ALIASES] = setOf(
+                "yamaha living:Woonkamer",
+                "tuin:Buiten",
+                "binnen&buiten:Binnen & Buiten"
+            )
+        }
+    }
+
     suspend fun load(): SettingsData {
+        migrateLegacyPlayerDefaults()
         val prefs = context.dataStore.data.first()
         val url = prefs[KEY_URL]
-        val token = prefs[KEY_TOKEN]
+        val storedToken = prefs[KEY_TOKEN].orEmpty()
+        val token = if (TokenCipher.isEncrypted(storedToken)) {
+            TokenCipher.decrypt(storedToken).orEmpty()
+        } else {
+            // Oude, onversleutelde opslag: meteen versleuteld terugschrijven.
+            if (storedToken.isNotEmpty()) {
+                context.dataStore.edit { it[KEY_TOKEN] = TokenCipher.encrypt(storedToken) }
+            }
+            storedToken
+        }
 
         return SettingsData(
             url = url ?: "",
-            token = token ?: "",
+            token = token,
             activePlaylistName = prefs[KEY_ACTIVE_PLAYLIST],
             activePlaylistUri = prefs[KEY_ACTIVE_URI],
             locations = parseLocations(prefs[KEY_LOCATIONS], prefs[KEY_HOME_LAT], prefs[KEY_HOME_LON]),
             activeLocationId = prefs[KEY_ACTIVE_LOCATION_ID] ?: "default",
-            volumeControlPlayerIds = prefs[KEY_VOLUME_PLAYERS] ?: setOf(
-                "tuin", "yamaha living", "binnen&buiten", "kijkpaal"
-            ),
-            localPlayerIds = prefs[KEY_LOCAL_PLAYERS] ?: setOf(
-                "tuin", "yamaha living", "binnen&buiten", "kijkpaal"
-            ),
+            volumeControlPlayerIds = prefs[KEY_VOLUME_PLAYERS] ?: emptySet(),
+            localPlayerIds = prefs[KEY_LOCAL_PLAYERS] ?: emptySet(),
             hiddenPlayerIds = prefs[KEY_HIDDEN_PLAYERS] ?: emptySet(),
-            playerAliases = (prefs[KEY_PLAYER_ALIASES] ?: setOf(
-                "yamaha living:Woonkamer",
-                "tuin:Buiten",
-                "binnen&buiten:Binnen & Buiten"
-            )).associate { 
+            playerAliases = (prefs[KEY_PLAYER_ALIASES] ?: emptySet()).associate {
                 val parts = it.split(":", limit = 2)
                 (parts.getOrNull(0) ?: "") to (parts.getOrNull(1) ?: "")
             }.filter { it.key.isNotBlank() },
             radioHistoryStationUri = prefs[KEY_RADIO_HISTORY_STATION],
             radioHistory = parseRadioHistory(prefs[KEY_RADIO_HISTORY_JSON]),
             playlistUsage = parseUsageMap(prefs[KEY_PLAYLIST_USAGE]),
-            radioUsage = parseUsageMap(prefs[KEY_RADIO_USAGE])
+            radioUsage = parseUsageMap(prefs[KEY_RADIO_USAGE]),
+            selectedTheme = prefs[KEY_THEME] ?: "CASSETTE",
+            showCompactHeader = prefs[KEY_COMPACT_HEADER] ?: false,
+            discoPlayerId = prefs[KEY_DISCO_PLAYER],
+            pinnedPlayerIds = prefs[KEY_PINNED_PLAYERS] ?: emptySet()
         )
     }
 
@@ -154,7 +189,7 @@ class SettingsStore(private val context: Context) {
     suspend fun save(url: String, token: String) {
         context.dataStore.edit { prefs ->
             prefs[KEY_URL] = url
-            prefs[KEY_TOKEN] = token
+            prefs[KEY_TOKEN] = TokenCipher.encrypt(token)
         }
     }
 
@@ -239,6 +274,30 @@ class SettingsStore(private val context: Context) {
         usage.forEach { (uri, count) -> obj.put(uri, count) }
         context.dataStore.edit { prefs ->
             prefs[KEY_RADIO_USAGE] = obj.toString()
+        }
+    }
+
+    suspend fun savePinnedPlayers(ids: Set<String>) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_PINNED_PLAYERS] = ids
+        }
+    }
+
+    suspend fun saveDiscoPlayer(playerId: String) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_DISCO_PLAYER] = playerId
+        }
+    }
+
+    suspend fun saveTheme(themeName: String) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_THEME] = themeName
+        }
+    }
+
+    suspend fun saveCompactHeader(compact: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_COMPACT_HEADER] = compact
         }
     }
 }

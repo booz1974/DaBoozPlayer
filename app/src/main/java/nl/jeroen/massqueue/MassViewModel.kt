@@ -8,8 +8,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 
 /** Nederlandse standaardteksten voor een nieuwe presentator / een nieuw segment. */
@@ -39,6 +42,9 @@ class MassViewModel : ViewModel() {
     private var client: MassApiClient? = null
     private var pollJob: Job? = null
     private var sleepJob: Job? = null
+    @Volatile private var appInForeground = true
+    /** Telt player/queue-events van de WebSocket; zie [refreshAfterCommand]. */
+    private val stateEventCount = MutableStateFlow(0L)
 
     /**
      * Epoch-ms waarop elke speler voor het laatst begon met afspelen (overgang naar "playing").
@@ -325,6 +331,7 @@ class MassViewModel : ViewModel() {
                     (e.type.startsWith("player") || e.type.startsWith("queue")) &&
                         e.type != "queue_time_updated"
                 }
+                .onEach { stateEventCount.update { n -> n + 1 } }
                 .debounce(250L)
                 .collect { tickOnce() }
         }
@@ -341,14 +348,46 @@ class MassViewModel : ViewModel() {
             while (true) {
                 tick()
                 // WS verbonden -> alleen een trage heartbeat als vangnet.
-                // WS weg -> terugvallen op het oude snelle pollen.
-                delay(if (eventSocket.connected.value) 30_000L else 3_000L)
+                // WS weg -> terugvallen op pollen; op de achtergrond (alleen de notificatie
+                // kijkt dan mee) een stuk rustiger om batterij te sparen.
+                val connected = eventSocket.connected.value
+                delay(
+                    when {
+                        appInForeground -> if (connected) 30_000L else 3_000L
+                        else -> if (connected) 120_000L else 30_000L
+                    }
+                )
             }
         }
     }
 
+    /** Door MainActivity aangeroepen bij onStart/onStop. */
+    fun setAppInForeground(foreground: Boolean) {
+        if (appInForeground == foreground) return
+        appInForeground = foreground
+        // Terug in beeld: meteen verversen en de wachttijd resetten.
+        if (foreground && pollJob != null) startPolling()
+    }
+
     private fun tickOnce() {
         viewModelScope.launch { tick() }
+    }
+
+    /**
+     * Scherm bijwerken na een commando, i.p.v. een vaste wachttijd. Met WebSocket wachten we
+     * tot MA een wijziging meldt (hooguit [timeoutMs]) en verversen dan meteen: snel als MA
+     * snel is, geduldig als de verbinding traag is. Zonder WebSocket kort wachten en verversen.
+     * De tick hier (en niet alleen die van de event-collector) zorgt dat de state bijgewerkt is
+     * als de aanroeper verdergaat, bv. voordat discoPending weer op null gaat.
+     */
+    private suspend fun refreshAfterCommand(timeoutMs: Long = 2_000L) {
+        if (eventSocket.connected.value) {
+            val seen = stateEventCount.value
+            withTimeoutOrNull(timeoutMs) { stateEventCount.first { it > seen } }
+        } else {
+            delay(500) // MA even de tijd geven om het commando te verwerken
+        }
+        tick()
     }
 
     override fun onCleared() {
@@ -606,8 +645,7 @@ class MassViewModel : ViewModel() {
                     delay(700)
                     client?.playMedia(playerId, radioUri, "add")
                 }
-                delay(800)
-                tick()
+                refreshAfterCommand()
             } catch (e: Exception) {
                 pendingRadioResumeUri = null
                 _uiState.update { it.copy(errorMessage = "Nummer afspelen mislukt: ${e.message}") }
@@ -687,7 +725,11 @@ class MassViewModel : ViewModel() {
             val playerId = _uiState.value.selectedPlayerId
             val player = _uiState.value.players.find { it.id == playerId }
             if (playerId != null && player?.playbackState?.lowercase() == "playing") {
-                try { client?.sendPlayerCommand("players/cmd/play_pause", playerId) } catch (_: Exception) {}
+                try {
+                    client?.sendPlayerCommand("players/cmd/play_pause", playerId)
+                } catch (e: Exception) {
+                    _uiState.update { it.copy(errorMessage = "Slaaptimer kon de muziek niet stoppen: ${e.message}") }
+                }
             }
             _uiState.update { it.copy(sleepTimerEndsAtMs = null) }
             tick()
@@ -699,8 +741,7 @@ class MassViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 client?.playIndex(playerId, index)
-                delay(400)
-                tick()
+                refreshAfterCommand()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Afspelen mislukt: ${e.message}") }
             }
@@ -713,8 +754,7 @@ class MassViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 client?.moveItemNext(playerId, track, currentIndex)
-                delay(400)
-                tick()
+                refreshAfterCommand()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Verplaatsen mislukt: ${e.message}") }
             }
@@ -732,8 +772,7 @@ class MassViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 client?.moveQueueItem(playerId, item, delta)
-                delay(400)
-                tick()
+                refreshAfterCommand()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Verplaatsen mislukt: ${e.message}") }
             }
@@ -745,8 +784,7 @@ class MassViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 client?.sendPlayerCommand(command, playerId)
-                delay(300)
-                tick()
+                refreshAfterCommand()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Commando mislukt: ${e.message}") }
             }
@@ -808,8 +846,7 @@ class MassViewModel : ViewModel() {
                         c.sendPlayerCommand("players/cmd/volume_mute", player.id, JSONObject().put("muted", true))
                     }
                 }
-                delay(300)
-                tick()
+                refreshAfterCommand()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Volume wijzigen mislukt: ${e.message}") }
             }
@@ -836,12 +873,19 @@ class MassViewModel : ViewModel() {
                 if (muted) {
                     c.sendPlayerCommand("players/cmd/volume_mute", memberId, JSONObject().put("muted", true))
                 }
-                delay(300)
-                tick()
+                refreshAfterCommand()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Volume wijzigen mislukt: ${e.message}") }
             }
         }
+    }
+
+    fun setDiscoPlayerId(id: String?) {
+        _uiState.update { it.copy(discoPlayerId = id) }
+    }
+
+    fun setPinnedPlayerIds(ids: Set<String>) {
+        _uiState.update { it.copy(pinnedPlayerIds = ids) }
     }
 
     /** Voegt de Hue-discospeler toe aan (of haalt hem uit) de groep die nu geselecteerd is. */
@@ -850,7 +894,7 @@ class MassViewModel : ViewModel() {
         val disco = state.discoPlayer()
         val targetId = state.discoTargetId()
         if (disco == null || targetId == null) {
-            _uiState.update { it.copy(errorMessage = "Speler \"$DISCO_PLAYER_NAME\" niet gevonden") }
+            _uiState.update { it.copy(errorMessage = "Geen disco-speler gevonden; kies er een in Instellingen") }
             return
         }
         if (disco.id == targetId) return
@@ -858,8 +902,7 @@ class MassViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 client?.setGroupMember(targetId, disco.id, add = on)
-                delay(800)
-                tick()
+                refreshAfterCommand()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Disco ${if (on) "aanzetten" else "uitzetten"} mislukt: ${e.message}") }
             } finally {
@@ -874,8 +917,7 @@ class MassViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 client?.shuffleQueue(playerId, !currentShuffle)
-                delay(600)
-                tick()
+                refreshAfterCommand()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Shuffelen mislukt: ${e.message}") }
             }
@@ -887,8 +929,7 @@ class MassViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 client?.clearQueue(playerId)
-                delay(500)
-                tick()
+                refreshAfterCommand()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Wachtrij wissen mislukt: ${e.message}") }
             }
@@ -903,8 +944,7 @@ class MassViewModel : ViewModel() {
             try {
                 client?.transferQueue(sourceId, targetPlayerId)
                 _uiState.update { it.copy(selectedPlayerId = targetPlayerId) }
-                delay(800)
-                tick()
+                refreshAfterCommand()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Verhuizen mislukt: ${e.message}") }
             }
@@ -1048,8 +1088,7 @@ class MassViewModel : ViewModel() {
             try {
                 onSavePlaylist?.invoke(station.name, stationUri)
                 client?.startAiRadio(playerId, station)
-                delay(500)
-                tick()
+                refreshAfterCommand()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "AI Radio start mislukt: ${e.message}") }
             }
@@ -1061,8 +1100,7 @@ class MassViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 client?.stopAiRadio(playerId)
-                delay(500)
-                tick()
+                refreshAfterCommand()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "AI Radio stop mislukt: ${e.message}") }
             }
@@ -1221,8 +1259,7 @@ class MassViewModel : ViewModel() {
             onSavePlaylist?.invoke(playlist.name, playlist.uri)
             try {
                 client?.playMedia(playerId, playlist.uri, "replace")
-                delay(1000)
-                tick()
+                refreshAfterCommand()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Afspelen mislukt: ${e.message}") }
             }
@@ -1259,8 +1296,7 @@ class MassViewModel : ViewModel() {
                     .firstOrNull { it.name.equals(WIZARD_STATION_NAME, ignoreCase = true) }
                     ?: station
                 c.startAiRadio(playerId, toStart)
-                delay(800)
-                tick()
+                refreshAfterCommand()
                 loadAiRadioData()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "AI Radio met presentator starten mislukt: ${e.message}") }
@@ -1277,8 +1313,7 @@ class MassViewModel : ViewModel() {
             onSavePlaylist?.invoke(playlist.name, playlist.uri)
             try {
                 client?.playMedia(playerId, playlist.uri, "replace_next")
-                delay(1200)
-                tick()
+                refreshAfterCommand()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Vervangen mislukt: ${e.message}") }
             }
@@ -1294,8 +1329,7 @@ class MassViewModel : ViewModel() {
             onSavePlaylist?.invoke(radio.name, radio.uri)
             try {
                 client?.playMedia(playerId, radio.uri, "replace")
-                delay(1000)
-                tick()
+                refreshAfterCommand()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Afspelen mislukt: ${e.message}") }
             }
@@ -1316,8 +1350,7 @@ class MassViewModel : ViewModel() {
             onSavePlaylist?.invoke(radio.name, radio.uri)
             try {
                 client?.playMedia(playerId, radio.uri, "replace_next")
-                delay(1200)
-                tick()
+                refreshAfterCommand()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Vervangen mislukt: ${e.message}") }
             }
@@ -1361,8 +1394,7 @@ class MassViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 client?.playMedia(playerId, track.uri, "replace")
-                delay(1000)
-                tick()
+                refreshAfterCommand()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Afspelen mislukt: ${e.message}") }
             }
@@ -1375,8 +1407,7 @@ class MassViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 client?.playMedia(playerId, track.uri, "replace_next")
-                delay(1200)
-                tick()
+                refreshAfterCommand()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Vervangen mislukt: ${e.message}") }
             }
@@ -1389,8 +1420,7 @@ class MassViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 client?.playMedia(playerId, artist.uri, "replace")
-                delay(1000)
-                tick()
+                refreshAfterCommand()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Afspelen mislukt: ${e.message}") }
             }
@@ -1403,8 +1433,7 @@ class MassViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 client?.playMedia(playerId, artist.uri, "replace_next")
-                delay(1200)
-                tick()
+                refreshAfterCommand()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Vervangen mislukt: ${e.message}") }
             }
@@ -1418,8 +1447,7 @@ class MassViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 client?.seek(playerId, positionSeconds)
-                delay(300)
-                tick()
+                refreshAfterCommand()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Spoelen mislukt: ${e.message}") }
             }

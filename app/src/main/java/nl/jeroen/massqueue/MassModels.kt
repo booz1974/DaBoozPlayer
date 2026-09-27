@@ -6,6 +6,8 @@ data class MassPlayer(
     val playbackState: String?,
     val volumeLevel: Int?,
     val volumeMuted: Boolean?,
+    /** Staat de speler aan volgens MA; null als MA het niet meldt. */
+    val powered: Boolean? = null,
     val activeSource: String? = null,
     /** MA-provider-instance van deze speler, bv. "google_cast", "sonos", "airplay". */
     val provider: String? = null,
@@ -19,7 +21,9 @@ data class MassPlayer(
     /** Leider waar deze speler aan gesynct is, als hij in een groep meespeelt. */
     val syncedTo: String? = null,
     /** Groepsspeler (bv. sync group) waar deze speler nu deel van uitmaakt. */
-    val activeGroup: String? = null
+    val activeGroup: String? = null,
+    /** Spelers waarmee MA deze speler laat groeperen; null als MA dat niet meestuurt. */
+    val canGroupWith: Set<String>? = null
 ) {
     /** Groepsspeler (bv. "Woonkamer totaal"): volume_level is daar 0/leeg, group_volume is leidend. */
     val isGroup: Boolean
@@ -51,12 +55,24 @@ fun MassPlayer.effectiveVolume(allPlayers: List<MassPlayer>): Int? {
     return if (memberVolumes.isNotEmpty()) memberVolumes.average().toInt() else volumeLevel
 }
 
+/**
+ * Staat de speler uit? Een losse speler als MA powered=false meldt; een groep als al
+ * zijn (bekende) leden uit staan. Onbekend telt als "aan", zodat we niets ten onrechte verbergen.
+ */
+fun MassPlayer.isPoweredOff(allPlayers: List<MassPlayer>): Boolean {
+    if (powered == false) return true
+    if (!isGroup) return false
+    val members = groupMembers.filter { it != id }.mapNotNull { m -> allPlayers.firstOrNull { it.id == m } }
+    return members.isNotEmpty() && members.all { it.powered == false }
+}
+
 /** Naam van de Hue-lichtspeler die de disco-schakelaar bij de spelende groep voegt. */
 const val DISCO_PLAYER_NAME = "Hue: disco woonkamer"
 
-/** De Hue-discospeler, als MA hem kent. */
+/** De discospeler: de in Instellingen gekozen speler, anders de Hue-speler op naam. */
 fun UiState.discoPlayer(): MassPlayer? =
-    players.firstOrNull { it.name.equals(DISCO_PLAYER_NAME, ignoreCase = true) }
+    discoPlayerId?.let { id -> players.firstOrNull { it.id == id } }
+        ?: players.firstOrNull { it.name.equals(DISCO_PLAYER_NAME, ignoreCase = true) }
 
 /**
  * Groep waar de disco-speler bij moet: de groep/leider waar de geselecteerde speler
@@ -73,6 +89,23 @@ fun UiState.isDiscoOn(): Boolean {
     val disco = discoPlayer() ?: return false
     val target = players.firstOrNull { it.id == discoTargetId() } ?: return false
     return disco.id in target.groupMembers || disco.syncedTo == target.id || disco.activeGroup == target.id
+}
+
+/**
+ * Kan de disco-schakelaar hier gebruikt worden? Alleen als MA de disco-speler met de
+ * doelgroep laat groeperen (can_group_with, in één van beide richtingen). Uitzetten kan altijd.
+ */
+fun UiState.canUseDisco(): Boolean {
+    val disco = discoPlayer() ?: return false
+    val targetId = discoTargetId() ?: return false
+    if (disco.id == targetId) return false
+    if (isDiscoOn()) return true
+    val target = players.firstOrNull { it.id == targetId }
+    val fromDisco = disco.canGroupWith
+    val fromTarget = target?.canGroupWith
+    // Geen informatie van MA (oudere versie): niet blokkeren.
+    if (fromDisco == null && fromTarget == null) return true
+    return fromDisco?.contains(targetId) == true || fromTarget?.contains(disco.id) == true
 }
 
 data class QueueTrack(
@@ -298,7 +331,11 @@ data class UiState(
     val searchLoading: Boolean = false,
     val searchQuery: String = "",
     /** Gewenste disco-stand terwijl het groeperen nog loopt (optimistisch), anders null. */
-    val discoPending: Boolean? = null
+    val discoPending: Boolean? = null,
+    /** In Instellingen gekozen disco-speler; null = zoek op [DISCO_PLAYER_NAME]. */
+    val discoPlayerId: String? = null,
+    /** Spelers die altijd in de hoofdlijst van de dropdown staan, nooit onder "Overige". */
+    val pinnedPlayerIds: Set<String> = emptySet()
 ) {
     val activeLocation: MassLocation? get() = locations.find { it.id == activeLocationId }
     val homeLat: Double? get() = activeLocation?.lat

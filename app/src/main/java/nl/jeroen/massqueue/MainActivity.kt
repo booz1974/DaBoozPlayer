@@ -3,12 +3,8 @@ package nl.jeroen.massqueue
 import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
-import android.view.View
-import android.view.ViewGroup
-import android.webkit.CookieManager
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.runtime.*
@@ -25,7 +21,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationRequest
@@ -38,6 +33,7 @@ import androidx.core.app.ActivityCompat
 import kotlinx.coroutines.launch
 import nl.jeroen.massqueue.ui.PlayerScreen
 import nl.jeroen.massqueue.ui.SettingsScreen
+import nl.jeroen.massqueue.ui.theme.AppTheme
 import nl.jeroen.massqueue.ui.theme.MassQueueTheme
 
 class MainActivity : ComponentActivity() {
@@ -62,37 +58,57 @@ class MainActivity : ComponentActivity() {
         return super.onKeyDown(keyCode, event)
     }
 
-    private fun checkLocation(client: FusedLocationProviderClient) {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION), 1001)
-        } else {
-            // Directe check voor de laatste locatie
-            client.lastLocation.addOnSuccessListener { location ->
-                location?.let { viewModel.updateLocation(it.latitude, it.longitude) }
-            }
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private var locationCallback: LocationCallback? = null
 
-            // Continue updates aanvragen (elke 5 seconden)
-            val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5000)
-                .setMinUpdateIntervalMillis(2000)
-                .build()
+    private fun hasLocationPermission() =
+        ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
-            val locationCallback = object : LocationCallback() {
-                override fun onLocationResult(locationResult: LocationResult) {
-                    for (location in locationResult.locations) {
-                        viewModel.updateLocation(location.latitude, location.longitude)
-                    }
-                }
-            }
+    /**
+     * Locatie is alleen nodig voor het thuis-filter (150 m), dus zuinig: netwerk/wifi-nauwkeurigheid,
+     * hooguit eens per minuut, en alleen zolang de app in beeld is (zie onStart/onStop).
+     */
+    private fun startLocationUpdates() {
+        if (locationCallback != null || !hasLocationPermission()) return
 
-            client.requestLocationUpdates(locationRequest, locationCallback, mainLooper)
+        fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+            location?.let { viewModel.updateLocation(it.latitude, it.longitude) }
         }
+
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, 120_000)
+            .setMinUpdateIntervalMillis(60_000)
+            .build()
+
+        val callback = object : LocationCallback() {
+            override fun onLocationResult(locationResult: LocationResult) {
+                locationResult.lastLocation?.let { viewModel.updateLocation(it.latitude, it.longitude) }
+            }
+        }
+        locationCallback = callback
+        fusedLocationClient.requestLocationUpdates(locationRequest, callback, mainLooper)
+    }
+
+    private fun stopLocationUpdates() {
+        locationCallback?.let { fusedLocationClient.removeLocationUpdates(it) }
+        locationCallback = null
+    }
+
+    override fun onStart() {
+        super.onStart()
+        startLocationUpdates()
+        viewModel.setAppInForeground(true)
+    }
+
+    override fun onStop() {
+        stopLocationUpdates()
+        viewModel.setAppInForeground(false)
+        super.onStop()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 1001 && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            val fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-            checkLocation(fusedLocationClient)
+            startLocationUpdates()
         }
     }
 
@@ -100,8 +116,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         val settingsStore = SettingsStore(applicationContext)
-        val fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-        checkLocation(fusedLocationClient)
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        if (!hasLocationPermission()) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION), 1001)
+        }
 
         // Toestemming voor de afspeel-notificatie (Android 13+).
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -111,7 +129,10 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            MassQueueTheme {
+            var selectedTheme by remember { mutableStateOf(AppTheme.CASSETTE) }
+            var showCompactHeader by remember { mutableStateOf(false) }
+
+            MassQueueTheme(appTheme = selectedTheme) {
                 var loadedUrl by remember { mutableStateOf<String?>(null) }
                 var loadedToken by remember { mutableStateOf("") }
                 val state by viewModel.uiState.collectAsState()
@@ -130,6 +151,10 @@ class MainActivity : ComponentActivity() {
                     val configured = settingsStore.isConfigured()
                     loadedUrl = settings.url
                     loadedToken = settings.token
+                    selectedTheme = AppTheme.entries.firstOrNull { it.name == settings.selectedTheme } ?: AppTheme.CASSETTE
+                    showCompactHeader = settings.showCompactHeader
+                    viewModel.setDiscoPlayerId(settings.discoPlayerId)
+                    viewModel.setPinnedPlayerIds(settings.pinnedPlayerIds)
                     if (configured && settings.url.isNotBlank()) {
                         viewModel.configureServer(
                             baseUrl = settings.url, 
@@ -177,6 +202,8 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             showSettings -> {
+                                // Systeem-terugknop sluit Instellingen i.p.v. de hele app (zolang er een server is)
+                                BackHandler(enabled = loadedUrl?.isNotBlank() == true) { showSettings = false }
                                 SettingsScreen(
                                     initialUrl = loadedUrl ?: "",
                                     initialToken = loadedToken,
@@ -223,54 +250,38 @@ class MainActivity : ComponentActivity() {
                                     onToggleVolumePlayer = { viewModel.toggleVolumePlayer(it) },
                                     onToggleLocalPlayer = { viewModel.toggleLocalPlayer(it) },
                                     onToggleHiddenPlayer = { viewModel.toggleHiddenPlayer(it) },
-                                    onSetPlayerAlias = { id, alias -> viewModel.setPlayerAlias(id, alias) }
+                                    onSetPlayerAlias = { id, alias -> viewModel.setPlayerAlias(id, alias) },
+                                    selectedTheme = selectedTheme,
+                                    onSelectTheme = { theme ->
+                                        selectedTheme = theme
+                                        scope.launch { settingsStore.saveTheme(theme.name) }
+                                    },
+                                    showCompactHeader = showCompactHeader,
+                                    onToggleCompactHeader = { compact ->
+                                        showCompactHeader = compact
+                                        scope.launch { settingsStore.saveCompactHeader(compact) }
+                                    },
+                                    discoPlayerId = state.discoPlayer()?.id,
+                                    onSelectDiscoPlayer = { id ->
+                                        viewModel.setDiscoPlayerId(id)
+                                        scope.launch { settingsStore.saveDiscoPlayer(id) }
+                                    },
+                                    pinnedPlayerIds = state.pinnedPlayerIds,
+                                    onTogglePinnedPlayer = { id ->
+                                        val next = state.pinnedPlayerIds.let { if (id in it) it - id else it + id }
+                                        viewModel.setPinnedPlayerIds(next)
+                                        scope.launch { settingsStore.savePinnedPlayers(next) }
+                                    },
+                                    onClose = if (loadedUrl?.isNotBlank() == true) { { showSettings = false } } else null
                                 )
                             }
                             else -> {
                                 Box(modifier = Modifier.fillMaxSize()) {
-                                    // Onzichtbare WebView om de sessie "warm" te houden.
-                                    AndroidView(
-                                        factory = { context ->
-                                            WebView(context).apply {
-                                                alpha = 0.01f
-                                                layoutParams = ViewGroup.LayoutParams(10, 10)
-                                                
-                                                // Beveiligingsinstellingen
-                                                settings.apply {
-                                                    javaScriptEnabled = true
-                                                    domStorageEnabled = true
-                                                    databaseEnabled = true
-                                                    allowFileAccess = false
-                                                    allowContentAccess = false
-                                                }
-                                                
-                                                val cookieManager = CookieManager.getInstance()
-                                                cookieManager.setAcceptCookie(true)
-                                                cookieManager.setAcceptThirdPartyCookies(this, true)
-                                                
-                                                webViewClient = object : WebViewClient() {
-                                                    override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                                                        loadedUrl?.let { baseUrl ->
-                                                            val cleanUrl = if (baseUrl.startsWith("http")) baseUrl else "http://$baseUrl"
-                                                            val cookieManager = CookieManager.getInstance()
-                                                            cookieManager.setCookie(cleanUrl, "mass_token=$loadedToken; Path=/")
-                                                            cookieManager.setCookie(cleanUrl, "access_token=$loadedToken; Path=/")
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        },
-                                        update = { webView ->
-                                            loadedUrl?.let { url ->
-                                                val finalUrl = if (url.startsWith("http")) url else "http://$url"
-                                                if (webView.url != finalUrl) {
-                                                    webView.loadUrl(finalUrl)
-                                                }
-                                            }
-                                        }
+                                    PlayerScreen(
+                                        viewModel = viewModel,
+                                        onOpenSettings = { showSettings = true },
+                                        showCompactHeader = showCompactHeader
                                     )
-
-                                    PlayerScreen(viewModel, onOpenSettings = { showSettings = true })
                                 }
                             }
                         }

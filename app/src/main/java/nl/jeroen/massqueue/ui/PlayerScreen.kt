@@ -8,10 +8,14 @@ package nl.jeroen.massqueue.ui
 
 import android.content.Intent
 import android.os.Build.VERSION.SDK_INT
+import android.os.VibrationEffect
+import android.os.Vibrator
+import androidx.compose.animation.Crossfade
 import androidx.core.net.toUri
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -20,6 +24,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -32,13 +37,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -56,9 +65,11 @@ import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.milliseconds
 import nl.jeroen.massqueue.MassPlayer
 import nl.jeroen.massqueue.effectiveVolume
+import nl.jeroen.massqueue.isPoweredOff
 import nl.jeroen.massqueue.GROUP_VOLUME_STEP
 import nl.jeroen.massqueue.discoPlayer
 import nl.jeroen.massqueue.isDiscoOn
+import nl.jeroen.massqueue.canUseDisco
 import nl.jeroen.massqueue.MassPlaylist
 import nl.jeroen.massqueue.MassArtist
 import nl.jeroen.massqueue.MassRadio
@@ -207,9 +218,13 @@ private fun computeSingleMove(
  * @param viewModel The [MassViewModel] providing state and handling actions.
  * @param onOpenSettings Callback invoked when the settings icon is clicked.
  */
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
+fun PlayerScreen(
+    viewModel: MassViewModel,
+    onOpenSettings: () -> Unit,
+    showCompactHeader: Boolean = false
+) {
     val state by viewModel.uiState.collectAsState()
     val activePlaylistName = state.activePlaylistName
     var trackForOptions by remember { mutableStateOf<QueueTrack?>(null) }
@@ -251,94 +266,144 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
                     color = MaterialTheme.colorScheme.surface,
                     shadowElevation = 4.dp
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .statusBarsPadding()
-                            .height(200.dp)
-                    ) {
-                        val context = LocalContext.current
-                        
-                        // We maken twee requests aan die we onthouden
-                        val playRequest = remember {
-                            ImageRequest.Builder(context)
-                                .data(R.drawable.title_logo_play)
-                                .decoderFactory(if (SDK_INT >= 28) ImageDecoderDecoder.Factory() else GifDecoder.Factory())
-                                .build()
-                        }
-                        val stopRequest = remember {
-                            ImageRequest.Builder(context)
-                                .data(R.drawable.title_logo_stop) // Dit is nu de JPG
-                                .build()
-                        }
-
-                        // We gebruiken Crossfade voor een vloeiende overgang zonder wit scherm
-                        androidx.compose.animation.Crossfade(
-                            targetState = isPlaying,
-                            animationSpec = tween(500),
-                            label = "headerCrossfade"
-                        ) { playing ->
-                            AsyncImage(
-                                model = if (playing) playRequest else stopRequest,
-                                contentDescription = "DA_BOOZ_PLAYER",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.FillWidth
-                            )
-                        }
-
-                        Text(
-                            if (isPlaying && !activePlaylistName.isNullOrBlank()) {
-                                activePlaylistName.uppercase()
-                            } else {
-                                "NU SPELEND"
+                    if (showCompactHeader) {
+                        TopAppBar(
+                            title = {
+                                Column {
+                                    Text(
+                                        if (isPlaying && !activePlaylistName.isNullOrBlank()) {
+                                            activePlaylistName.uppercase()
+                                        } else {
+                                            "DA BOOZ PLAYER"
+                                        },
+                                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (selectedPlayer != null) {
+                                        Text(
+                                            state.playerAliases[selectedPlayer.id] ?: selectedPlayer.name,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
                             },
-                            modifier = Modifier
-                                .statusBarsPadding()
-                                // Rechts ruimte laten voor de disco-schakelaar
-                                .padding(start = 125.dp, top = 34.dp, end = 84.dp),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                color = Color(0xFFFAF3E0), // CassetteCream kleur
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace
+                            actions = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(end = 4.dp)
+                                ) {
+                                    Icon(
+                                        painterResource(R.drawable.ic_disco_ball),
+                                        contentDescription = "Disco",
+                                        tint = if (state.isDiscoOn()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                    Switch(
+                                        checked = state.isDiscoOn(),
+                                        onCheckedChange = { viewModel.setDisco(it) },
+                                        enabled = selectedPlayer != null && state.canUseDisco(),
+                                        modifier = Modifier.scale(0.8f)
+                                    )
+                                }
+                                IconButton(onClick = onOpenSettings) {
+                                    Icon(
+                                        Icons.Filled.Settings,
+                                        contentDescription = "Instellingen",
+                                        tint = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surface
                             )
                         )
-
-                        // Disco-schakelaar rechtsboven in de hoek.
-                        Row(
+                    } else {
+                        Box(
                             modifier = Modifier
-                                .align(Alignment.TopEnd)
+                                .fillMaxWidth()
                                 .statusBarsPadding()
-                                .padding(top = 22.dp, end = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .height(200.dp)
                         ) {
-                            Icon(
-                                painterResource(R.drawable.ic_disco_ball),
-                                contentDescription = "Disco",
-                                tint = Color(0xFFFAF3E0),
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Switch(
-                                checked = state.isDiscoOn(),
-                                onCheckedChange = { viewModel.setDisco(it) },
-                                enabled = selectedPlayer != null && state.discoPlayer() != null,
-                                modifier = Modifier.scale(0.8f)
-                            )
-                        }
+                            val context = LocalContext.current
 
-                        // Instellingen-knop rechtsonder op het cassettebandje.
-                        IconButton(
-                            onClick = onOpenSettings,
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(bottom = 4.dp, end = 6.dp)
-                        ) {
-                            Icon(
-                                Icons.Filled.Settings,
-                                contentDescription = "Instellingen",
-                                tint = Color(0xFFFAF3E0)
+                            val playRequest = remember {
+                                ImageRequest.Builder(context)
+                                    .data(R.drawable.title_logo_play)
+                                    .decoderFactory(if (SDK_INT >= 28) ImageDecoderDecoder.Factory() else GifDecoder.Factory())
+                                    .build()
+                            }
+                            val stopRequest = remember {
+                                ImageRequest.Builder(context)
+                                    .data(R.drawable.title_logo_stop)
+                                    .build()
+                            }
+
+                            Crossfade(
+                                targetState = isPlaying,
+                                animationSpec = tween(500),
+                                label = "headerCrossfade"
+                            ) { playing ->
+                                AsyncImage(
+                                    model = if (playing) playRequest else stopRequest,
+                                    contentDescription = "DA_BOOZ_PLAYER",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.FillWidth
+                                )
+                            }
+
+                            Text(
+                                if (isPlaying && !activePlaylistName.isNullOrBlank()) {
+                                    activePlaylistName.uppercase()
+                                } else {
+                                    "NU SPELEND"
+                                },
+                                modifier = Modifier
+                                    .statusBarsPadding()
+                                    .padding(start = 125.dp, top = 34.dp, end = 84.dp),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    color = Color(0xFFFAF3E0),
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace
+                                )
                             )
+
+                            Row(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .statusBarsPadding()
+                                    .padding(top = 22.dp, end = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    painterResource(R.drawable.ic_disco_ball),
+                                    contentDescription = "Disco",
+                                    tint = Color(0xFFFAF3E0),
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Switch(
+                                    checked = state.isDiscoOn(),
+                                    onCheckedChange = { viewModel.setDisco(it) },
+                                    enabled = selectedPlayer != null && state.canUseDisco(),
+                                    modifier = Modifier.scale(0.8f)
+                                )
+                            }
+
+                            IconButton(
+                                onClick = onOpenSettings,
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(bottom = 4.dp, end = 6.dp)
+                            ) {
+                                Icon(
+                                    Icons.Filled.Settings,
+                                    contentDescription = "Instellingen",
+                                    tint = Color(0xFFFAF3E0)
+                                )
+                            }
                         }
                     }
                 }
@@ -350,13 +415,14 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
                     .fillMaxSize()
                     .padding(16.dp)
             ) {
+                val context = LocalContext.current
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = {
-                        showSearch = true
-                    }) {
+                    IconButton(onClick = { showSearch = true }) {
                         Icon(
                             Icons.Filled.Search,
                             contentDescription = "Nummer zoeken",
@@ -364,14 +430,12 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
                         )
                     }
 
-                    IconButton(onClick = {
-                        showTransfer = true
-                    }) {
+                    IconButton(onClick = { showTransfer = true }) {
                         Icon(
-                            Icons.Filled.SwapHoriz, 
+                            Icons.Filled.SwapHoriz,
                             contentDescription = "Muziek verhuizen",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(26.dp)
                         )
                     }
 
@@ -381,39 +445,34 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
                         viewModel.loadAiRadioData()
                     }) {
                         Icon(
-                            Icons.Filled.AutoFixHigh, 
+                            Icons.Filled.AutoFixHigh,
                             contentDescription = "Muziek Wizard",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
 
-                    val context = LocalContext.current
-                    
                     IconButton(
                         enabled = state.serverUrl.isNotBlank(),
                         onClick = {
-                            val target = state.serverUrl.let { if (it.startsWith("http")) it else "http://$it" }
+                            val target = state.serverUrl.let { if (it.startsWith("http")) it else "https://$it" }
                             val intent = Intent(Intent.ACTION_VIEW, target.toUri())
                             context.startActivity(intent)
                         }
                     ) {
-                        // Gebruikt het Music Assistant logo (teal)
                         Icon(
                             painter = painterResource(id = R.drawable.ic_mass_logo),
                             contentDescription = "Open Music Assistant",
-                            tint = Color.Unspecified, 
+                            tint = Color.Unspecified,
                             modifier = Modifier.size(24.dp)
                         )
                     }
-
-                    Spacer(Modifier.weight(1f))
 
                     IconButton(onClick = {
                         showRadios = true
                         viewModel.loadFavoriteRadios()
                     }) {
                         Icon(
-                            Icons.Filled.Radio, 
+                            Icons.Filled.Radio,
                             contentDescription = "Favoriete radiozenders",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(24.dp)
@@ -425,13 +484,13 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
                         showAiDj = true
                     }) {
                         Icon(
-                            Icons.Filled.Psychology, 
+                            Icons.Filled.Psychology,
                             contentDescription = "AI Radio DJ",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(24.dp)
                         )
                     }
-                    
+
                     IconButton(onClick = {
                         showFavorites = true
                         viewModel.loadFavoritePlaylists(forceRefresh = true)
@@ -442,6 +501,7 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+
                     IconButton(onClick = { showSleepTimer = true }) {
                         Icon(
                             Icons.Filled.Bedtime,
@@ -483,8 +543,10 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
 
                 state.sleepTimerEndsAtMs?.let { endsAt ->
                     var now by remember { mutableStateOf(System.currentTimeMillis()) }
-                    LaunchedEffect(endsAt) {
-                        while (true) { now = System.currentTimeMillis(); delay(1000) }
+                    val appVisible = rememberAppVisible()
+                    LaunchedEffect(endsAt, appVisible) {
+                        now = System.currentTimeMillis()
+                        while (appVisible) { now = System.currentTimeMillis(); delay(1000) }
                     }
                     val remainingSec = ((endsAt - now).coerceAtLeast(0L) / 1000).toInt()
                     Row(
@@ -613,7 +675,7 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
                                 onNext = { viewModel.sendCommand("players/cmd/next") },
                                 onVolumeDown = { viewModel.setVolume("down") },
                                 onVolumeUp = { viewModel.setVolume("up") },
-                                onVolumeClick = if (selectedPlayer?.isGroup == true) {
+                                onVolumeClick = if (selectedPlayer != null) {
                                     { showMemberVolumes = true }
                                 } else null,
                                 onShuffle = { viewModel.shuffleQueue() },
@@ -939,14 +1001,19 @@ fun PlayerScreen(viewModel: MassViewModel, onOpenSettings: () -> Unit) {
         )
     }
 
-    if (showMemberVolumes && selectedPlayer?.isGroup == true) {
+    if (showMemberVolumes && selectedPlayer != null) {
         val discoId = state.discoPlayer()?.id
+        val members = if (selectedPlayer.isGroup) {
+            selectedPlayer.groupMembers
+                .filter { it != selectedPlayer.id && it != discoId }
+                .mapNotNull { id -> state.players.firstOrNull { it.id == id } }
+        } else {
+            listOf(selectedPlayer)
+        }
         MemberVolumeSheet(
             group = selectedPlayer,
             groupVolume = selectedPlayer.effectiveVolume(state.players),
-            members = selectedPlayer.groupMembers
-                .filter { it != selectedPlayer.id && it != discoId }
-                .mapNotNull { id -> state.players.firstOrNull { it.id == id } },
+            members = members,
             playerAliases = state.playerAliases,
             onDismiss = { showMemberVolumes = false },
             onSetVolume = { id, level -> viewModel.setMemberVolume(id, level) }
@@ -1050,8 +1117,6 @@ private fun Float.asTwoDecimals(): String {
  */
 @Composable
 private fun RadioHistoryRow(entry: RadioHistoryEntry, showDivider: Boolean, onClick: () -> Unit) {
-    // Radiostreams leveren zelf geen releasejaar; we vullen dat aan via een
-    // best-effort iTunes-opzoeking op artiest + titel, met cache per term.
     val searchTerm = itunesSearchTerm(entry.artist, entry.track)
     var year by remember(searchTerm) { mutableStateOf(searchTerm?.let { itunesYearCache[it] }?.takeIf { it != 0 }) }
     LaunchedEffect(searchTerm) {
@@ -1061,25 +1126,32 @@ private fun RadioHistoryRow(entry: RadioHistoryEntry, showDivider: Boolean, onCl
     }
     val titleText = if (year != null) "${entry.track ?: "-"} ($year)" else (entry.track ?: "-")
 
-    Column {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick)
-                .padding(vertical = 8.dp, horizontal = 2.dp),
+                .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 Icons.Filled.History,
                 contentDescription = null,
                 modifier = Modifier.size(16.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = MaterialTheme.colorScheme.primary
             )
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     titleText,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -1102,25 +1174,9 @@ private fun RadioHistoryRow(entry: RadioHistoryEntry, showDivider: Boolean, onCl
             Icon(
                 Icons.Filled.PlayCircleOutline,
                 contentDescription = "Dit nummer nu afspelen",
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(22.dp),
                 tint = MaterialTheme.colorScheme.primary
             )
-        }
-        if (showDivider) {
-            Canvas(modifier = Modifier.fillMaxWidth().height(1.dp)) {
-                val dashWidth = 6.dp.toPx()
-                val gapWidth = 5.dp.toPx()
-                var x = 0f
-                while (x < size.width) {
-                    drawLine(
-                        color = Color(0xFF1C1B19).copy(alpha = 0.25f),
-                        start = androidx.compose.ui.geometry.Offset(x, 0f),
-                        end = androidx.compose.ui.geometry.Offset(x + dashWidth, 0f),
-                        strokeWidth = 1.dp.toPx()
-                    )
-                    x += dashWidth + gapWidth
-                }
-            }
         }
     }
 }
@@ -1204,10 +1260,10 @@ private fun MemberVolumeSheet(
                 .fillMaxWidth()
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
+                Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    "VOLUME PER SPELER",
+                    if (group.isGroup) "VOLUME PER SPELER" else "VOLUME BEDIENING",
                     style = MaterialTheme.typography.labelLarge,
                     fontFamily = FontFamily.Monospace,
                     letterSpacing = 2.sp
@@ -1215,7 +1271,10 @@ private fun MemberVolumeSheet(
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                "${playerAliases[group.id] ?: group.name} · groep ${groupVolume?.let { "$it%" } ?: "-"}",
+                if (group.isGroup)
+                    "${playerAliases[group.id] ?: group.name} · groep ${groupVolume?.let { "$it%" } ?: "-"}"
+                else
+                    "${playerAliases[group.id] ?: group.name} · ${groupVolume?.let { "$it%" } ?: "-"}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1544,10 +1603,35 @@ private fun visibleSortedPlayers(state: UiState): List<MassPlayer> {
         compareByDescending<MassPlayer> {
             it.playbackState?.lowercase() == "playing" || state.queueSummaries[it.id]?.isPlaying == true
         }
+            .thenByDescending { it.isGroup }
             .thenByDescending { state.queueSummaries[it.id]?.hasItems == true }
             .thenByDescending { state.playerLastPlayingAtMs[it.id] ?: 0L }
             .thenBy { label(it).lowercase() }
     )
+}
+
+/**
+ * True zolang de app in beeld is (lifecycle STARTED). Tik-lusjes in de UI (klokjes,
+ * voortgangsbalk, wisselende hoezen) stoppen daarbuiten om batterij te sparen; bij
+ * terugkomen herstarten ze en rekenen ze vanaf de echte tijd verder.
+ */
+@Composable
+private fun rememberAppVisible(): Boolean {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val state by lifecycle.currentStateFlow.collectAsState()
+    return state.isAtLeast(Lifecycle.State.STARTED)
+}
+
+/**
+ * Spelers die je zelden los kiest: leden van een groepsspeler (bv. de losse L/R-speakers)
+ * en lichtspelers (Hue). Die komen in de dropdown onder "Overige spelers", tenzij ze
+ * geselecteerd zijn of spelen.
+ */
+private fun isSecondaryPlayer(player: MassPlayer, state: UiState): Boolean {
+    if (player.id == state.selectedPlayerId || player.id in state.pinnedPlayerIds) return false
+    if (player.playbackState?.lowercase() == "playing" || state.queueSummaries[player.id]?.isPlaying == true) return false
+    if (player.type.equals("light", ignoreCase = true)) return true
+    return state.players.any { it.id != player.id && it.isGroup && player.id in it.groupMembers }
 }
 
 /**
@@ -1567,57 +1651,182 @@ private fun PlayerDropdown(state: UiState, onSelect: (String) -> Unit) {
         return state.playerAliases[player.id] ?: player.name
     }
 
-    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        val placeholder = when {
-            state.isLoading -> "Spelers laden..."
-            !state.isNearLocation && state.players.isEmpty() -> "Geen spelers in de buurt"
-            state.players.isEmpty() -> "Geen spelers gevonden"
-            else -> "Kies speler"
-        }
+    val (secondaryPlayers, mainPlayers) = visibleSortedPlayers(state).partition { isSecondaryPlayer(it, state) }
+    var showSecondary by remember { mutableStateOf(false) }
 
-        // Een plattere variant van de dropdown
-        Surface(
-            onClick = { expanded = true },
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .clickable { expanded = true }
+    ) {
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(38.dp), // Ca 60% van de standaard 56-64dp hoogte
-            shape = RoundedCornerShape(4.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-            color = MaterialTheme.colorScheme.surface
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            val isPlaying = selected?.playbackState?.lowercase() == "playing"
+            val statusColor = when {
+                isPlaying -> Color(0xFF4CAF50)
+                selected?.playbackState?.lowercase() == "paused" -> Color(0xFFFF9800)
+                else -> Color(0xFF9E9E9E)
+            }
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(statusColor)
+            )
+
+            Spacer(Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = selected?.let { formatPlayerName(it) } ?: "Kies Speler",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (selected?.isGroup == true) {
+                        Spacer(Modifier.width(6.dp))
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                        ) {
+                            Text(
+                                "Groep",
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                }
+
+                val locationText = if (!state.isNearLocation) "📍 Buitenshuis (150m+)" else null
+                val subtitleText = locationText ?: selected?.playbackState?.replaceFirstChar { it.uppercase() } ?: "Beschikbaar"
                 Text(
-                    text = selected?.let { formatPlayerName(it) } ?: placeholder,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Icon(
-                    Icons.Filled.ArrowDropDown,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp)
+                    text = subtitleText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        }
 
-        val visiblePlayers = visibleSortedPlayers(state)
+            selected?.effectiveVolume(state.players)?.let { vol ->
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                ) {
+                    Text(
+                        "$vol%",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+            }
+
+            Icon(
+                Icons.Filled.ArrowDropDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
 
         DropdownMenu(
             expanded = expanded,
-            onDismissRequest = { expanded = false },
+            onDismissRequest = { expanded = false; showSecondary = false },
             modifier = Modifier.fillMaxWidth(0.9f)
         ) {
-            visiblePlayers.forEach { player ->
+            val shownPlayers = if (showSecondary) mainPlayers + secondaryPlayers else mainPlayers
+            shownPlayers.forEachIndexed { index, player ->
+                if (showSecondary && index == mainPlayers.size) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                }
+                val isSelected = player.id == state.selectedPlayerId
+                val playerPlaying = player.playbackState?.lowercase() == "playing"
                 DropdownMenuItem(
-                    text = { Text(formatPlayerName(player)) },
+                    text = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (playerPlaying) Color(0xFF4CAF50) else Color(0xFF9E9E9E)
+                                    )
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                formatPlayerName(player),
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f)
+                            )
+                            // Uit -> "uit"; geen volume (bv. Hue) -> niets; 0% -> met stil-icoon.
+                            val vol = player.effectiveVolume(state.players)
+                            when {
+                                player.isPoweredOff(state.players) -> Text(
+                                    "uit",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                )
+                                vol == null -> Unit
+                                else -> Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (vol == 0) {
+                                        Icon(
+                                            Icons.AutoMirrored.Filled.VolumeOff,
+                                            contentDescription = "Stil",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(Modifier.width(4.dp))
+                                    }
+                                    Text(
+                                        "$vol%",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    },
                     onClick = {
                         expanded = false
+                        showSecondary = false
                         onSelect(player.id)
                     }
+                )
+            }
+            if (secondaryPlayers.isNotEmpty()) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            if (showSecondary) "Minder spelers tonen" else "Overige spelers (${secondaryPlayers.size})",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    trailingIcon = {
+                        Icon(
+                            if (showSecondary) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    onClick = { showSecondary = !showSecondary }
                 )
             }
         }
@@ -1746,13 +1955,6 @@ private fun MassImage(
 
 /**
  * Large display for the currently playing track, including progress bar.
- *
- * @param track The track currently playing.
- * @param isPlaying Current playback status.
- * @param fallbackTerm Fallback string for image search.
- * @param activePlaylistName Name of the active playlist, if any.
- * @param elapsedTime Current playback position in seconds.
- * @param onSeek Callback invoked with the new position (seconds) when the user drags the status bar.
  */
 @Composable
 private fun NowPlayingHero(
@@ -1763,19 +1965,16 @@ private fun NowPlayingHero(
     elapsedTime: Int?,
     onSeek: (Int) -> Unit
 ) {
-    // Bij radio met live songinfo wisselen we de hoes af en toe voor het zenderlogo:
-    // ~30 s de albumhoes van het nummer, dan ~5 s het logo van het radiostation.
     val songArt = track?.streamImage?.takeIf { it.isNotBlank() }
     val stationArt = track?.imagePath?.takeIf { it.isNotBlank() }
     val hasSongInfo = track?.hasStreamInfo == true
-    // Alterneren zodra we songinfo hebben én een zenderlogo; de songhoes zelf mag
-    // ontbreken (dan haalt MassImage 'm via de fallbackTerm bij iTunes op).
     val canAlternateArt = hasSongInfo && stationArt != null && stationArt != songArt
 
     var showStationArt by remember { mutableStateOf(false) }
-    LaunchedEffect(canAlternateArt, track?.streamTrack, track?.streamArtist) {
+    val appVisible = rememberAppVisible()
+    LaunchedEffect(canAlternateArt, track?.streamTrack, track?.streamArtist, appVisible) {
         showStationArt = false
-        if (!canAlternateArt) return@LaunchedEffect
+        if (!canAlternateArt || !appVisible) return@LaunchedEffect
         while (true) {
             delay(30_000)
             showStationArt = true
@@ -1785,8 +1984,6 @@ private fun NowPlayingHero(
     }
 
     val stationArtVisible = canAlternateArt && showStationArt
-    // Tijdens het zenderlogo-venster: forceer het logo en zet de iTunes-fallback uit.
-    // Anders: songhoes (of null -> MassImage lost 'm op via fallbackTerm).
     val heroArt: String? = when {
         stationArtVisible -> stationArt
         hasSongInfo -> songArt
@@ -1794,133 +1991,155 @@ private fun NowPlayingHero(
     }
     val heroFallbackTerm = if (stationArtVisible) null else fallbackTerm
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(8.dp))
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Box(
-            modifier = Modifier
-                .size(52.dp)
-                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            if (track?.isAiRadio == true) {
-                Icon(
-                    Icons.Filled.Mic,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            } else {
-                androidx.compose.animation.Crossfade(
-                    targetState = heroArt to heroFallbackTerm,
-                    animationSpec = tween(400),
-                    label = "heroArtCrossfade"
-                ) { (artModel, artFallback) ->
-                    MassImage(
-                        model = artModel,
-                        fallbackTerm = artFallback,
-                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(4.dp))
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (track?.isAiRadio == true) {
+                        Icon(
+                            Icons.Filled.Mic,
+                            contentDescription = null,
+                            modifier = Modifier.size(28.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    } else {
+                        Crossfade(
+                            targetState = heroArt to heroFallbackTerm,
+                            animationSpec = tween(400),
+                            label = "heroArtCrossfade"
+                        ) { (artModel, artFallback) ->
+                            MassImage(
+                                model = artModel,
+                                fallbackTerm = artFallback,
+                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp))
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.width(14.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    val isAiRadio = track?.isAiRadio == true
+                    val hasStreamInfo = track?.hasStreamInfo == true
+
+                    val displayLabel = when {
+                        isAiRadio -> "AI RADIO LIVE"
+                        hasStreamInfo -> (track?.title?.takeIf { it.isNotBlank() }
+                            ?: activePlaylistName?.takeIf { it.isNotBlank() }
+                            ?: "RADIO").uppercase()
+                        isPlaying && !activePlaylistName.isNullOrBlank() -> activePlaylistName.uppercase()
+                        else -> "NU SPELEND"
+                    }
+
+                    val fallbackArtist = if (hasStreamInfo) track?.streamArtist else track?.artist
+                    val fallbackTitle = if (hasStreamInfo) track?.streamTrack else track?.title
+                    val fallbackSearchTerm = if (hasStreamInfo || track?.year == null) {
+                        itunesSearchTerm(fallbackArtist, fallbackTitle)
+                    } else null
+                    var fallbackYear by remember(fallbackSearchTerm) {
+                        mutableStateOf(fallbackSearchTerm?.let { itunesYearCache[it] }?.takeIf { it != 0 })
+                    }
+                    LaunchedEffect(fallbackSearchTerm) {
+                        if (fallbackYear == null && fallbackSearchTerm != null) {
+                            fallbackYear = lookupItunesYear(fallbackArtist, fallbackTitle)
+                        }
+                    }
+                    val mainTitle = when {
+                        hasStreamInfo -> track?.streamTrack ?: track?.title ?: "-"
+                        else -> track?.title ?: "-"
+                    }
+                    val displayYear = if (hasStreamInfo) fallbackYear else (track?.year ?: fallbackYear)
+                    val secondaryText = when {
+                        hasStreamInfo -> track?.streamArtist ?: ""
+                        else -> track?.subtitle ?: ""
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = displayLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = if (isAiRadio) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (displayYear != null) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    "$displayYear",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(2.dp))
+
+                    Text(
+                        mainTitle,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
+
+                    Text(
+                        secondaryText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    val albumText = if (hasStreamInfo) track?.streamAlbum?.takeIf { it.isNotBlank() } else null
+                    if (albumText != null) {
+                        Text(
+                            albumText,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            val isAiRadio = track?.isAiRadio == true
-            // Radiostream met live metadata: toon de zendernaam als label en
-            // artiest + songtitel eronder, net als in Music Assistant.
-            val hasStreamInfo = track?.hasStreamInfo == true
 
-            val displayLabel = when {
-                isAiRadio -> "AI RADIO LIVE"
-                hasStreamInfo -> (track?.title?.takeIf { it.isNotBlank() }
-                    ?: activePlaylistName?.takeIf { it.isNotBlank() }
-                    ?: "RADIO").uppercase()
-                isPlaying && !activePlaylistName.isNullOrBlank() -> activePlaylistName.uppercase()
-                else -> "NU SPELEND"
-            }
-            // Fallback via iTunes wanneer Music Assistant zelf geen jaartal levert:
-            // altijd voor radiostreams (die hebben nooit trackmetadata), en voor
-            // gewone tracks alleen als de eigen MA-metadata geen jaar bevat.
-            val fallbackArtist = if (hasStreamInfo) track?.streamArtist else track?.artist
-            val fallbackTitle = if (hasStreamInfo) track?.streamTrack else track?.title
-            val fallbackSearchTerm = if (hasStreamInfo || track?.year == null) {
-                itunesSearchTerm(fallbackArtist, fallbackTitle)
-            } else null
-            var fallbackYear by remember(fallbackSearchTerm) {
-                mutableStateOf(fallbackSearchTerm?.let { itunesYearCache[it] }?.takeIf { it != 0 })
-            }
-            LaunchedEffect(fallbackSearchTerm) {
-                if (fallbackYear == null && fallbackSearchTerm != null) {
-                    fallbackYear = lookupItunesYear(fallbackArtist, fallbackTitle)
-                }
-            }
-            val mainTitle = when {
-                hasStreamInfo -> track?.streamTrack ?: track?.title ?: "-"
-                else -> track?.title ?: "-"
-            }.let { titleText ->
-                val year = if (hasStreamInfo) fallbackYear else (track?.year ?: fallbackYear)
-                if (year != null) "$titleText ($year)" else titleText
-            }
-            val secondaryText = when {
-                hasStreamInfo -> track?.streamArtist ?: ""
-                else -> track?.subtitle ?: ""
-            }
-
-            Text(
-                text = displayLabel,
-                style = MaterialTheme.typography.labelSmall,
-                fontFamily = FontFamily.Monospace,
-                color = if (isAiRadio) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                mainTitle,
-                style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                lineHeight = 18.sp
-            )
-            Text(
-                secondaryText,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            // Album van het radionummer, indien de stream dat meegeeft.
-            val albumText = if (hasStreamInfo) track?.streamAlbum?.takeIf { it.isNotBlank() } else null
-            if (albumText != null) {
-                Text(
-                    albumText,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.55f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            // Status balkje - verbergen voor AI Radio (duur is vaak 0)
-            if (!isAiRadio && elapsedTime != null && track?.durationSeconds != null && track.durationSeconds > 0) {
-                Spacer(Modifier.height(6.dp))
+            // Progress Slider
+            if (!track?.isAiRadio!! && elapsedTime != null && track.durationSeconds != null && track.durationSeconds > 0) {
+                Spacer(Modifier.height(8.dp))
 
                 val duration = track.durationSeconds
-                // De server levert elapsed_time maar 1x per ~2,5 s. We ankeren op elke
-                // nieuwe serverwaarde en tellen er lokaal seconden bij op zolang er speelt,
-                // zodat de balk vloeiend loopt i.p.v. te verspringen.
                 val anchorRealtimeMs = remember(elapsedTime, isPlaying) { System.currentTimeMillis() }
                 var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
-                LaunchedEffect(elapsedTime, isPlaying, duration) {
-                    while (isPlaying) {
+                LaunchedEffect(elapsedTime, isPlaying, duration, appVisible) {
+                    while (isPlaying && appVisible) {
                         nowMs = System.currentTimeMillis()
                         delay(500)
                     }
@@ -1937,8 +2156,6 @@ private fun NowPlayingHero(
                     label = "nowPlayingProgress"
                 )
 
-                // Zolang de gebruiker het balkje versleept, tonen we die positie i.p.v. de
-                // servertijd; pas bij loslaten sturen we het spoel-commando.
                 var dragFraction by remember { mutableStateOf<Float?>(null) }
                 val displayElapsed = dragFraction?.let { (it * duration).toInt() } ?: shownElapsed
 
@@ -1949,11 +2166,11 @@ private fun NowPlayingHero(
                         dragFraction?.let { fraction -> onSeek((fraction * duration).toInt()) }
                         dragFraction = null
                     },
-                    modifier = Modifier.fillMaxWidth().height(20.dp),
+                    modifier = Modifier.fillMaxWidth().height(22.dp),
                     colors = SliderDefaults.colors(
                         thumbColor = MaterialTheme.colorScheme.onPrimaryContainer,
                         activeTrackColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        inactiveTrackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.15f)
+                        inactiveTrackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)
                     )
                 )
                 Row(
@@ -1962,13 +2179,13 @@ private fun NowPlayingHero(
                 ) {
                     Text(
                         formatDuration(displayElapsed),
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                     )
                     Text(
                         formatDuration(duration),
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                     )
                 }
             }
@@ -2000,7 +2217,7 @@ private fun TransportRow(
     var isSpinning by remember { mutableStateOf(false) }
     val diceFaces = listOf("⚀", "⚁", "⚂", "⚃", "⚄", "⚅")
     var currentDiceFace by remember { mutableStateOf(diceFaces.random()) }
-    
+
     val infiniteTransition = rememberInfiniteTransition(label = "diceSpin")
     val rotation by infiniteTransition.animateFloat(
         initialValue = 0f,
@@ -2022,93 +2239,139 @@ private fun TransportRow(
         }
     }
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
+    // De wis-knop staat naast "vorige": eerst bevestigen, zodat een mistik de wachtrij niet leegt.
+    var confirmClear by remember { mutableStateOf(false) }
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            icon = { Icon(Icons.Filled.DeleteSweep, contentDescription = null) },
+            title = { Text("Wachtrij wissen?") },
+            text = { Text("Alle nummers in de wachtrij van deze speler worden verwijderd.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmClear = false
+                        onClear()
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Wissen")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClear = false }) {
+                    Text("Annuleren")
+                }
+            }
+        )
+    }
+
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
     ) {
-        IconButton(
-            onClick = onClear,
-            modifier = Modifier.size(36.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                Icons.Filled.DeleteSweep, 
-                contentDescription = "Wachtrij wissen", 
-                tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
-                modifier = Modifier.size(20.dp)
-            )
-        }
-        
-        IconButton(onClick = onPrevious) { Icon(Icons.Filled.SkipPrevious, contentDescription = "Vorige") }
-        
-        Surface(
-            onClick = onPlayPause,
-            shape = RoundedCornerShape(8.dp),
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(48.dp)
-        ) {
-            Box(contentAlignment = Alignment.Center) {
+            IconButton(
+                onClick = { confirmClear = true },
+                modifier = Modifier.size(40.dp)
+            ) {
                 Icon(
-                    if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = if (isPlaying) "Pauzeren" else "Afspelen",
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    Icons.Filled.DeleteSweep,
+                    contentDescription = "Wachtrij wissen",
+                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                    modifier = Modifier.size(22.dp)
                 )
             }
-        }
-        
-        IconButton(onClick = onNext) { Icon(Icons.Filled.SkipNext, contentDescription = "Volgende") }
-        
-        IconButton(
-            onClick = {
-                try {
-                    val vibrator = context.getSystemService(android.os.Vibrator::class.java)
-                    vibrator?.vibrate(android.os.VibrationEffect.createOneShot(50, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
-                } catch (_: Exception) {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                }
-                isSpinning = true
-                onShuffle()
-            },
-            modifier = Modifier.size(40.dp)
-        ) {
-            Text(
-                text = currentDiceFace,
-                fontSize = 24.sp,
-                modifier = Modifier.graphicsLayer(rotationZ = if (isSpinning) rotation else 0f),
-                color = if (shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-            )
-        }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(
-                onClick = onVolumeDown,
-                modifier = Modifier.size(32.dp)
-            ) { 
-                Icon(
-                    Icons.AutoMirrored.Filled.VolumeDown, 
-                    contentDescription = "Volume omlaag",
-                    modifier = Modifier.size(20.dp)
-                ) 
+            IconButton(onClick = onPrevious, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Filled.SkipPrevious, contentDescription = "Vorige", modifier = Modifier.size(26.dp))
             }
-            Text(
-                volumeLevel?.let { "$it%" } ?: "-",
-                style = MaterialTheme.typography.labelSmall,
-                color = if (onVolumeClick != null) MaterialTheme.colorScheme.primary else Color.Unspecified,
-                textDecoration = if (onVolumeClick != null) TextDecoration.Underline else null,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
-                    .then(if (onVolumeClick != null) Modifier.clickable(onClick = onVolumeClick) else Modifier)
-                    .padding(horizontal = 2.dp, vertical = 6.dp)
-            )
+
+            Surface(
+                onClick = onPlayPause,
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+                modifier = Modifier.size(54.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        contentDescription = if (isPlaying) "Pauzeren" else "Afspelen",
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(30.dp)
+                    )
+                }
+            }
+
+            IconButton(onClick = onNext, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Filled.SkipNext, contentDescription = "Volgende", modifier = Modifier.size(26.dp))
+            }
+
             IconButton(
-                onClick = onVolumeUp,
-                modifier = Modifier.size(32.dp)
-            ) { 
-                Icon(
-                    Icons.AutoMirrored.Filled.VolumeUp, 
-                    contentDescription = "Volume omhoog",
-                    modifier = Modifier.size(20.dp)
-                ) 
+                onClick = {
+                    try {
+                        val vibrator = context.getSystemService(Vibrator::class.java)
+                        vibrator?.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
+                    } catch (_: Exception) {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    }
+                    isSpinning = true
+                    onShuffle()
+                },
+                modifier = Modifier.size(40.dp)
+            ) {
+                Text(
+                    text = currentDiceFace,
+                    fontSize = 24.sp,
+                    modifier = Modifier.graphicsLayer(rotationZ = if (isSpinning) rotation else 0f),
+                    color = if (shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = onVolumeDown,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.VolumeDown,
+                        contentDescription = "Volume omlaag",
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Text(
+                    volumeLevel?.let { "$it%" } ?: "-",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    color = if (onVolumeClick != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    textDecoration = if (onVolumeClick != null) TextDecoration.Underline else null,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .then(if (onVolumeClick != null) Modifier.clickable(onClick = onVolumeClick) else Modifier)
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                )
+                IconButton(
+                    onClick = onVolumeUp,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.VolumeUp,
+                        contentDescription = "Volume omhoog",
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
     }
@@ -2134,88 +2397,93 @@ private fun QueueRow(
     dragHandle: (@Composable () -> Unit)? = null
 ) {
     Column {
-        Row(
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = if (rowBackground != Color.Transparent) rowBackground
+                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (faded) 0.25f else 0.4f),
             modifier = Modifier
                 .fillMaxWidth()
-                .background(rowBackground, RoundedCornerShape(4.dp))
+                .padding(vertical = 3.dp)
+                .clip(RoundedCornerShape(12.dp))
                 .clickable(onClick = onClick)
-                .padding(vertical = 8.dp, horizontal = 2.dp),
-            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                "%02d".format(track.absoluteIndex + 1),
-                style = MaterialTheme.typography.labelSmall,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.width(20.dp)
-            )
-            Spacer(Modifier.width(6.dp))
-            if (track.isAiRadio) {
-                Box(
-                    modifier = Modifier
-                        .size(30.dp)
-                        .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(2.dp)),
-                    contentAlignment = Alignment.Center
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
                 ) {
-                    Icon(
-                        Icons.Filled.Mic, 
-                        contentDescription = null, 
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                    Text(
+                        "%02d".format(track.absoluteIndex + 1),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                     )
                 }
-            } else {
-                MassImage(
-                    model = track.imagePath,
-                    fallbackTerm = fallbackTerm,
-                    modifier = Modifier
-                        .size(30.dp)
-                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(2.dp))
-                        .alpha(if (faded) 0.55f else 1f)
-                )
-            }
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    track.title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (track.isAiRadio) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.alpha(if (faded) 0.55f else 1f)
-                )
-                Text(
-                    track.subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            if (dragHandle != null) {
-                dragHandle()
-            } else {
-                Text(
-                    if (track.isAiRadio) "" else formatDuration(track.durationSeconds),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        if (showDivider) {
-            Canvas(modifier = Modifier.fillMaxWidth().height(1.dp)) {
-                val dashWidth = 6.dp.toPx()
-                val gapWidth = 5.dp.toPx()
-                var x = 0f
-                while (x < size.width) {
-                    drawLine(
-                        color = Color(0xFF1C1B19).copy(alpha = 0.25f),
-                        start = androidx.compose.ui.geometry.Offset(x, 0f),
-                        end = androidx.compose.ui.geometry.Offset(x + dashWidth, 0f),
-                        strokeWidth = 1.dp.toPx()
+
+                Spacer(Modifier.width(10.dp))
+
+                if (track.isAiRadio) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.secondaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Filled.Mic,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                } else {
+                    MassImage(
+                        model = track.imagePath,
+                        fallbackTerm = fallbackTerm,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .alpha(if (faded) 0.55f else 1f)
                     )
-                    x += dashWidth + gapWidth
+                }
+
+                Spacer(Modifier.width(12.dp))
+
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        track.title,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                        color = if (track.isAiRadio) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.alpha(if (faded) 0.55f else 1f)
+                    )
+                    Text(
+                        track.subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                if (dragHandle != null) {
+                    dragHandle()
+                } else {
+                    Text(
+                        if (track.isAiRadio) "" else formatDuration(track.durationSeconds),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }

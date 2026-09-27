@@ -1,3 +1,6 @@
+import java.text.SimpleDateFormat
+import java.util.Date
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -9,11 +12,17 @@ android {
     compileSdk = 34
 
     defaultConfig {
+        // De Playground-kopie gebruikt nl.jeroen.massqueue.playground, zodat beide naast elkaar kunnen staan
         applicationId = "nl.jeroen.massqueue"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = 2
+        versionName = "3.2"
+        resValue("string", "app_name", "Da Booz Player")
+        buildConfigField(
+            "String", "BUILD_TIME",
+            "\"${SimpleDateFormat("yyyy-MM-dd HH:mm").format(Date())}\""
+        )
     }
 
     buildTypes {
@@ -33,6 +42,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
