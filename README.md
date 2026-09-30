@@ -1,14 +1,30 @@
-# SpinFlow — Native Music Assistant App
+# SpinFlow Player
 
-![SpinFlow](docs/banner.jpg)
+**Music Assistant Queue Control**: een native Android-app voor je [Music Assistant](https://music-assistant.io/) server.
 
-Een moderne, native Android-app voor het bedienen van je **Music Assistant** (MA) server. Deze app is ontworpen om een snelle en betrouwbare interface te bieden, onafhankelijk van de Home Assistant Ingress-proxy, met slimme functies voor thuisgebruik.
+![SpinFlow Player](docs/banner.jpg)
+
+SpinFlow is een snelle, betrouwbare bediening voor Music Assistant (MA), los van de Home Assistant Ingress-proxy, met slimme functies voor thuisgebruik: wachtrijbeheer, radio met live nummerinfo, groepsvolume, zoeken, een AI Radio DJ en een cassettebandje dat meedraait met je muziek.
 
 <p align="center">
-  <img src="docs/screenshot.jpg" alt="Speler-scherm met wachtrij" width="320">
+  <img src="docs/screenshot-player.jpg" alt="Speler met wachtrij" width="260">
+  &nbsp;
+  <img src="docs/screenshot-search.jpg" alt="Zoeken met albums" width="260">
+  &nbsp;
+  <img src="docs/screenshot-themes.jpg" alt="Kleurthema's" width="260">
 </p>
 
-Boven in het scherm zit een cassettebandje: de spoeltjes **draaien zolang er muziek speelt** en **staan stil zodra de muziek pauzeert of stopt**, zodat je in één oogopslag ziet of er iets klinkt.
+## Het cassettebandje 📼
+Boven in het scherm zit een cassettebandje dat laat zien wat er speelt:
+- **Draaiende spoeltjes**: de spoeltjes **draaien zolang er muziek speelt** en **staan stil zodra de muziek pauzeert of stopt**, zodat je in één oogopslag ziet of er iets klinkt.
+- **Handgeschreven etiket**: op het bandje zit een papieren sticker waarop de naam van de playlist, het album of de radiozender met stift is geschreven, net als op zelf opgenomen bandjes van vroeger.
+- **Side A of Side B**: bij elke nieuwe playlist, album of zender kiest de app willekeurig of je naar kant A of kant B luistert.
+- **Kleurt mee met je thema**: de bies bovenaan het etiket en het SpinFlow-logo erop hebben de steunkleur van het gekozen thema.
+- **Disco & instellingen**: rechtsonder op het bandje zitten de disco-schakelaar 🪩 en het tandwiel voor de instellingen.
+- **Liever compact?** Zet in Instellingen de *Compacte Minimalist Header* aan voor een slanke balk met logo in plaats van het bandje.
+
+## Kleurthema's 🎨
+Kies in Instellingen uit tien thema's: **Original**, **Cassette Futurism**, **Midnight Synthwave**, **Deep Emerald**, **OLED Minimalist**, **Retro Sunset**, **Amber Terminal**, **Espresso Mocha**, **Lavendel Dream** en **Rosé Blush**. De steunkleur van het thema komt overal terug, tot en met het Music Assistant-icoon in de iconenbalk (dat de MA-webinterface opent).
 
 ## Nieuw: AI Radio DJ (Beta) 🎙️
 De app bevat nu een experimentele **AI Radio DJ** die je playlists aan elkaar praat:
@@ -29,7 +45,7 @@ De app is zich bewust van zijn locatie om de interface schoon en relevant te hou
 - **Groepsvolume**: Bij groepsspelers (sync groups zoals "Eettafel" of "Woonkamer Totaal") regelen de +/−-knoppen het groepsvolume via `players/cmd/group_volume`, net als de schuif in de Music Assistant-webinterface, en tonen ze het echte groepsvolume in plaats van 0%.
 - **Stappen van 5% & echt stil bij 0%**: Volume gaat in stappen van 5%. Op 0% is de speler echt stil: losse spelers worden ook gemute, en bij een groep die al op 0 staat stuurt de app eerst kort 1% zodat de 0 echt bij de speakers aankomt.
 - **Volume per speler**: Tik bij een groep op het volumegetal (onderstreept) en er opent een schermpje met elke speler uit de groep, elk met een eigen schuif en −/+-knoppen (stappen van 5%). De Hue-discospeler wordt daar niet getoond.
-- **Disco-schakelaar** 🪩: Rechtsboven op het cassettebandje staat een schakelaar met een discobal. Aan voegt de Hue-lichtspeler "Hue: disco woonkamer" toe aan de groep van de gekozen speler (zodat de lampen meebewegen op de muziek), uit haalt hem er weer uit. De stand volgt wat Music Assistant rapporteert. Het tandwiel voor de instellingen zit rechtsonder op het bandje.
+- **Disco-schakelaar** 🪩: Rechtsonder op het cassettebandje, naast het tandwiel, staat een schakelaar met een discobal. Aan voegt de Hue-lichtspeler "Hue: disco woonkamer" toe aan de groep van de gekozen speler (zodat de lampen meebewegen op de muziek), uit haalt hem er weer uit. De stand volgt wat Music Assistant rapporteert.
 - **Speler Aliassen**: Geef je speakers eigen "roepnamen" (bijv. "Yamaha Living" -> "Woonkamer") die overal in de app worden gebruikt.
 - **Slimme Spelerkeuze**: De dropdown sorteert spelers die nu spelen bovenaan (meest recent gestart eerst), gevolgd door spelers met een geladen wachtrij, en de rest alfabetisch. Bij het eerste opstarten kiest de app om dezelfde reden ook zo'n speler als standaard, in plaats van gewoon de alfabetisch eerste.
 - **Spelers verbergen**: Vink in Instellingen onder "Spelers in keuzelijst" spelers uit die je nooit gebruikt; ze verdwijnen uit de dropdown (de actief geselecteerde speler blijft altijd zichtbaar).
@@ -43,7 +59,7 @@ De app is zich bewust van zijn locatie om de interface schoon en relevant te hou
 - **Releasejaar**: Naast de titel van het nu spelende nummer verschijnt, waar bekend, het releasejaar — uit Music Assistant's eigen metadata, of anders (bijv. bij radio) via een gefilterde iTunes-zoekopdracht met caching per zoekterm.
 - **Vloeiende voortgangsbalk**: De positie loopt lokaal door tussen de serverpolls in, zodat de balk soepel meebeweegt in plaats van te verspringen.
 - **Spoelen**: Versleep de voortgangsbalk om naar een ander punt in het nummer te springen; het spoel-commando gaat pas naar de server als je loslaat.
-- **Zoeken** 🔍: Zoek op artiest, titel of afspeellijst via Music Assistant (`music/search`). Resultaten staan per categorie (nummers, artiesten, afspeellijsten) en kun je direct afspelen of als volgende in de wachtrij zetten.
+- **Zoeken** 🔍: Zoek op artiest, titel, album of afspeellijst via Music Assistant (`music/search`). Resultaten staan per categorie (nummers, artiesten, albums, afspeellijsten); albums tonen hoes, artiest en jaartal. Alles kun je direct afspelen of als volgende in de wachtrij zetten.
 - **Meest gekozen bovenaan**: Favoriete afspeellijsten en radiozenders worden gesorteerd op hoe vaak je ze kiest (daarna alfabetisch). De tellingen blijven bewaard tussen app-herstarts.
 - **Slaaptimer** 🌙: Zet via de maan-knop een timer op 15/30/45/60/90 minuten. Een chip toont de resterende tijd; daarna pauzeert de muziek automatisch.
 - **Lockscreen- & bluetooth-bediening**: Een `MediaSession` toont het nu spelende nummer met hoes in de notificatiebalk en op het lockscreen. Play/pauze/vorige/volgende werken daar en via bluetooth-, koptelefoon- en autoknoppen; de commando's gaan naar Music Assistant en de status komt terug in de notificatie.
