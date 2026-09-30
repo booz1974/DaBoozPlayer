@@ -191,11 +191,8 @@ fun SettingsScreen(
 
             // Telefoon als speler (Sendspin)
             item {
-                SettingsSectionCard(
-                    title = "Telefoon als speler",
-                    subtitle = "Speel muziek van Music Assistant af op deze telefoon, ook op de achtergrond",
-                    icon = Icons.Outlined.PhoneAndroid
-                ) {
+                // Geen kop: de rij met de schakelaar heeft de titel al
+                SettingsSectionCard {
                     // Zelfde uitklap-patroon als Kleurthema: naam en adres pas na uitklappen
                     var phoneExpanded by remember { mutableStateOf(false) }
                     Surface(
@@ -785,9 +782,9 @@ fun SettingsScreen(
 
 @Composable
 private fun SettingsSectionCard(
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
+    title: String? = null,
+    subtitle: String? = null,
+    icon: ImageVector? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
     Card(
@@ -798,35 +795,38 @@ private fun SettingsSectionCard(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        icon,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(20.dp)
-                    )
+            // Kop (icoon, titel, uitleg) is optioneel
+            if (title != null && subtitle != null && icon != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            icon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            title,
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                        )
+                        Text(
+                            subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
-                Spacer(Modifier.width(12.dp))
-                Column {
-                    Text(
-                        title,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                    )
-                    Text(
-                        subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Spacer(Modifier.height(16.dp))
             }
-            Spacer(Modifier.height(16.dp))
             content()
         }
     }
