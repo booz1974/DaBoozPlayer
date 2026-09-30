@@ -2,7 +2,9 @@
 
 **Music Assistant Queue Control**: een native Android-app voor je [Music Assistant](https://music-assistant.io/) server.
 
-![SpinFlow Player](docs/banner.jpg)
+<p align="center">
+  <img src="docs/screenshot-minimal-eettafel.jpg" alt="SpinFlow in minimal mode (compacte header) op de Eettafel" width="320">
+</p>
 
 SpinFlow is een snelle, betrouwbare bediening voor Music Assistant (MA), los van de Home Assistant Ingress-proxy, met slimme functies voor thuisgebruik: wachtrijbeheer, radio met live nummerinfo, groepsvolume, zoeken, een AI Radio DJ en een cassettebandje dat meedraait met je muziek.
 
