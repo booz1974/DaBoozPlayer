@@ -1440,6 +1440,34 @@ class MassViewModel : ViewModel() {
         }
     }
 
+    fun playAlbumNow(album: MassAlbum) {
+        val playerId = _uiState.value.selectedPlayerId ?: return
+        lastLocalChangeTime = System.currentTimeMillis()
+        _uiState.update { it.copy(activePlaylistName = album.name, activePlaylistUri = album.uri) }
+        viewModelScope.launch {
+            try {
+                client?.playMedia(playerId, album.uri, "replace")
+                refreshAfterCommand()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Afspelen mislukt: ${e.message}") }
+            }
+        }
+    }
+
+    fun playAlbumNext(album: MassAlbum) {
+        val playerId = _uiState.value.selectedPlayerId ?: return
+        lastLocalChangeTime = System.currentTimeMillis()
+        _uiState.update { it.copy(activePlaylistName = album.name, activePlaylistUri = album.uri) }
+        viewModelScope.launch {
+            try {
+                client?.playMedia(playerId, album.uri, "replace_next")
+                refreshAfterCommand()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Vervangen mislukt: ${e.message}") }
+            }
+        }
+    }
+
     /** Spoelt het huidige nummer op de geselecteerde speler naar [positionSeconds]. */
     fun seek(positionSeconds: Int) {
         val playerId = _uiState.value.selectedPlayerId ?: return

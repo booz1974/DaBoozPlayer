@@ -83,6 +83,7 @@ import nl.jeroen.massqueue.isDiscoOn
 import nl.jeroen.massqueue.canUseDisco
 import nl.jeroen.massqueue.MassPlaylist
 import nl.jeroen.massqueue.MassArtist
+import nl.jeroen.massqueue.MassAlbum
 import nl.jeroen.massqueue.MassRadio
 import nl.jeroen.massqueue.MassSearchResults
 import nl.jeroen.massqueue.MassTrack
@@ -250,6 +251,7 @@ fun PlayerScreen(
     var radioForOptions by remember { mutableStateOf<MassRadio?>(null) }
     var searchResultForOptions by remember { mutableStateOf<MassTrack?>(null) }
     var searchArtistForOptions by remember { mutableStateOf<MassArtist?>(null) }
+    var searchAlbumForOptions by remember { mutableStateOf<MassAlbum?>(null) }
     var searchPlaylistForOptions by remember { mutableStateOf<MassPlaylist?>(null) }
     var stationToEdit by remember { mutableStateOf<AiRadioStation?>(null) }
     var hostToEdit by remember { mutableStateOf<AiRadioHost?>(null) }
@@ -955,7 +957,7 @@ fun PlayerScreen(
         )
     }
 
-    if (showSearch && searchResultForOptions == null && searchArtistForOptions == null && searchPlaylistForOptions == null) {
+    if (showSearch && searchResultForOptions == null && searchArtistForOptions == null && searchAlbumForOptions == null && searchPlaylistForOptions == null) {
         SearchSheet(
             query = state.searchQuery,
             results = state.searchResults,
@@ -967,6 +969,7 @@ fun PlayerScreen(
             },
             onSelectTrack = { searchResultForOptions = it },
             onSelectArtist = { searchArtistForOptions = it },
+            onSelectAlbum = { searchAlbumForOptions = it },
             onSelectPlaylist = { searchPlaylistForOptions = it }
         )
     }
@@ -1005,6 +1008,25 @@ fun PlayerScreen(
                 showSearch = false
                 viewModel.clearSearch()
                 viewModel.playArtistNext(artist)
+            }
+        )
+    }
+
+    searchAlbumForOptions?.let { album ->
+        PlayOptionsSheet(
+            title = album.name,
+            onDismiss = { searchAlbumForOptions = null },
+            onPlayNow = {
+                searchAlbumForOptions = null
+                showSearch = false
+                viewModel.clearSearch()
+                viewModel.playAlbumNow(album)
+            },
+            onPlayNext = {
+                searchAlbumForOptions = null
+                showSearch = false
+                viewModel.clearSearch()
+                viewModel.playAlbumNext(album)
             }
         )
     }
@@ -2758,6 +2780,7 @@ private fun SearchSheet(
     onDismiss: () -> Unit,
     onSelectTrack: (MassTrack) -> Unit,
     onSelectArtist: (MassArtist) -> Unit,
+    onSelectAlbum: (MassAlbum) -> Unit,
     onSelectPlaylist: (MassPlaylist) -> Unit
 ) {
     var text by remember { mutableStateOf(query) }
@@ -2778,7 +2801,7 @@ private fun SearchSheet(
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
-                label = { Text("Artiest, titel of afspeellijst") },
+                label = { Text("Artiest, titel, album of afspeellijst") },
                 singleLine = true,
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                 trailingIcon = {
@@ -2800,7 +2823,7 @@ private fun SearchSheet(
                 text.isBlank() -> {
                     Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                         Text(
-                            "Typ een artiest, titel of afspeellijst om te zoeken.",
+                            "Typ een artiest, titel, album of afspeellijst om te zoeken.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
@@ -2838,6 +2861,18 @@ private fun SearchSheet(
                                     imagePath = artist.imagePath,
                                     fallbackTerm = artist.name,
                                     onClick = { onSelectArtist(artist) }
+                                )
+                            }
+                        }
+                        if (results.albums.isNotEmpty()) {
+                            item { SearchSectionHeader("Albums") }
+                            items(results.albums) { album ->
+                                SearchResultRow(
+                                    title = album.name,
+                                    subtitle = album.subtitle,
+                                    imagePath = album.imagePath,
+                                    fallbackTerm = "${album.subtitle} - ${album.name}",
+                                    onClick = { onSelectAlbum(album) }
                                 )
                             }
                         }

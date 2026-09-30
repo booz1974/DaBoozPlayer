@@ -650,13 +650,13 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
         }
 
     /**
-     * Zoekt nummers, artiesten en afspeellijsten in Music Assistant (alle providers),
+     * Zoekt nummers, artiesten, albums en afspeellijsten in Music Assistant (alle providers),
      * voor de handmatige zoekfunctie in de app. Gebruikt dezelfde arg-varianten als
      * [searchTrackUri] omdat MA-versies verschillen.
      */
     suspend fun search(query: String, limit: Int = 12): MassSearchResults {
         if (query.isBlank()) return MassSearchResults()
-        val types = JSONArray(listOf("track", "artist", "playlist"))
+        val types = JSONArray(listOf("track", "artist", "album", "playlist"))
         val variants = listOf(
             JSONObject().put("search_query", query).put("media_types", types).put("limit", limit),
             JSONObject().put("query", query).put("media_types", types).put("limit", limit)
@@ -668,9 +668,10 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
             anySucceeded = true
             val tracks = parseSearchTracks(extractResultArray(resp, "tracks"))
             val artists = parseSearchArtists(extractResultArray(resp, "artists"))
+            val albums = parseSearchAlbums(extractResultArray(resp, "albums"))
             val playlists = parseSearchPlaylists(extractResultArray(resp, "playlists"))
-            if (tracks.isNotEmpty() || artists.isNotEmpty() || playlists.isNotEmpty()) {
-                return MassSearchResults(tracks = tracks, artists = artists, playlists = playlists)
+            if (tracks.isNotEmpty() || artists.isNotEmpty() || albums.isNotEmpty() || playlists.isNotEmpty()) {
+                return MassSearchResults(tracks = tracks, artists = artists, albums = albums, playlists = playlists)
             }
         }
         if (!anySucceeded) lastError?.let { throw it }
@@ -724,6 +725,35 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
                 MassArtist(
                     uri = uri,
                     name = a.optString("name", "Onbekende artiest"),
+                    imagePath = resolveImageUrl(a, null)
+                )
+            )
+        }
+        return result
+    }
+
+    private fun parseSearchAlbums(albums: JSONArray?): List<MassAlbum> {
+        if (albums == null) return emptyList()
+        val result = mutableListOf<MassAlbum>()
+        for (i in 0 until albums.length()) {
+            val a = albums.optJSONObject(i) ?: continue
+            val uri = a.optString("uri").takeIf { it.isNotBlank() } ?: continue
+            val artistNames = mutableListOf<String>()
+            a.optJSONArray("artists")?.let { arr ->
+                for (j in 0 until arr.length()) {
+                    arr.optJSONObject(j)?.optString("name")?.takeIf { it.isNotBlank() }
+                        ?.let { artistNames.add(it) }
+                }
+            }
+            val year = a.optInt("year", 0).takeIf { it > 0 }?.toString()
+            result.add(
+                MassAlbum(
+                    uri = uri,
+                    name = a.optString("name", "Onbekend album"),
+                    subtitle = listOfNotNull(
+                        artistNames.joinToString(", ").takeIf { it.isNotBlank() },
+                        year
+                    ).joinToString(" · "),
                     imagePath = resolveImageUrl(a, null)
                 )
             )

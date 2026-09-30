@@ -173,13 +173,23 @@ data class MassArtist(
     val imagePath: String?
 )
 
+/** Eén album-zoekresultaat uit `music/search`. */
+data class MassAlbum(
+    val uri: String,
+    val name: String,
+    /** Artiest(en) en jaartal, bv. "Chic · 1978". */
+    val subtitle: String,
+    val imagePath: String?
+)
+
 /** Gecategoriseerde resultaten van de handmatige zoekfunctie. */
 data class MassSearchResults(
     val tracks: List<MassTrack> = emptyList(),
     val artists: List<MassArtist> = emptyList(),
+    val albums: List<MassAlbum> = emptyList(),
     val playlists: List<MassPlaylist> = emptyList()
 ) {
-    val isEmpty: Boolean get() = tracks.isEmpty() && artists.isEmpty() && playlists.isEmpty()
+    val isEmpty: Boolean get() = tracks.isEmpty() && artists.isEmpty() && albums.isEmpty() && playlists.isEmpty()
 }
 
 data class MassLocation(
