@@ -196,13 +196,15 @@ fun SettingsScreen(
                     subtitle = "Speel muziek van Music Assistant af op deze telefoon, ook op de achtergrond",
                     icon = Icons.Outlined.PhoneAndroid
                 ) {
+                    // Zelfde uitklap-patroon als Kleurthema: naam en adres pas na uitklappen
+                    var phoneExpanded by remember { mutableStateOf(false) }
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .clickable { onTogglePhonePlayer?.invoke(!phonePlayerEnabled) }
+                            .clickable { phoneExpanded = !phoneExpanded }
                     ) {
                         Row(
                             modifier = Modifier
@@ -229,47 +231,53 @@ fun SettingsScreen(
                                 checked = phonePlayerEnabled,
                                 onCheckedChange = { onTogglePhonePlayer?.invoke(it) }
                             )
+                            Spacer(Modifier.width(8.dp))
+                            Icon(
+                                if (phoneExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                contentDescription = if (phoneExpanded) "Speler-instellingen inklappen" else "Speler-instellingen uitklappen"
+                            )
                         }
                     }
 
-                    Spacer(Modifier.height(12.dp))
-
                     var phoneName by remember(phonePlayerName) { mutableStateOf(phonePlayerName) }
                     var phoneUrl by remember(phonePlayerLocalUrl) { mutableStateOf(phonePlayerLocalUrl) }
-                    OutlinedTextField(
-                        value = phoneName,
-                        onValueChange = { phoneName = it },
-                        label = { Text("Naam in Music Assistant") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        leadingIcon = { Icon(Icons.Outlined.Badge, contentDescription = null) },
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = phoneUrl,
-                        onValueChange = { phoneUrl = it },
-                        label = { Text("Sendspin-adres thuis (terugval)") },
-                        placeholder = { Text(DEFAULT_SENDSPIN_LOCAL_URL) },
-                        supportingText = { Text("Eerst via het server-adres hierboven, met je API-token; dit adres alleen als dat niet lukt") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        leadingIcon = { Icon(Icons.Outlined.Link, contentDescription = null) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    val changed = phoneName.trim() != phonePlayerName || phoneUrl.trim() != phonePlayerLocalUrl
-                    if (changed) {
-                        Spacer(Modifier.height(8.dp))
-                        Button(
-                            onClick = { onSavePhonePlayer?.invoke(phoneName, phoneUrl) },
-                            enabled = phoneName.isNotBlank(),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.align(Alignment.End)
-                        ) {
-                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Toepassen", fontWeight = FontWeight.SemiBold)
+                    if (phoneExpanded) {
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = phoneName,
+                            onValueChange = { phoneName = it },
+                            label = { Text("Naam in Music Assistant") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            leadingIcon = { Icon(Icons.Outlined.Badge, contentDescription = null) },
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = phoneUrl,
+                            onValueChange = { phoneUrl = it },
+                            label = { Text("Sendspin-adres thuis (terugval)") },
+                            placeholder = { Text(DEFAULT_SENDSPIN_LOCAL_URL) },
+                            supportingText = { Text("Eerst via het server-adres hierboven, met je API-token; dit adres alleen als dat niet lukt") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            leadingIcon = { Icon(Icons.Outlined.Link, contentDescription = null) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        val changed = phoneName.trim() != phonePlayerName || phoneUrl.trim() != phonePlayerLocalUrl
+                        if (changed) {
+                            Spacer(Modifier.height(8.dp))
+                            Button(
+                                onClick = { onSavePhonePlayer?.invoke(phoneName, phoneUrl) },
+                                enabled = phoneName.isNotBlank(),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.align(Alignment.End)
+                            ) {
+                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Toepassen", fontWeight = FontWeight.SemiBold)
+                            }
                         }
                     }
                 }
