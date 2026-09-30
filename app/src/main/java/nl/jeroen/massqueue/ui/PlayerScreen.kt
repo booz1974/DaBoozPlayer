@@ -18,6 +18,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -38,9 +39,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.graphics.Color
@@ -65,6 +71,7 @@ import coil.decode.GifDecoder
 import coil.decode.ImageDecoderDecoder
 import coil.request.ImageRequest
 import kotlinx.coroutines.delay
+import kotlin.random.Random
 import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.milliseconds
 import nl.jeroen.massqueue.MassPlayer
@@ -343,13 +350,13 @@ fun PlayerScreen(
 
                             val playRequest = remember {
                                 ImageRequest.Builder(context)
-                                    .data(R.drawable.title_logo_play)
+                                    .data(R.drawable.cassette_title_logo_play)
                                     .decoderFactory(if (SDK_INT >= 28) ImageDecoderDecoder.Factory() else GifDecoder.Factory())
                                     .build()
                             }
                             val stopRequest = remember {
                                 ImageRequest.Builder(context)
-                                    .data(R.drawable.title_logo_stop)
+                                    .data(R.drawable.cassette_title_logo_stop)
                                     .build()
                             }
 
@@ -366,29 +373,60 @@ fun PlayerScreen(
                                 )
                             }
 
-                            Text(
-                                if (isPlaying && !activePlaylistName.isNullOrBlank()) {
-                                    activePlaylistName.uppercase()
+                            // App-naam midden op het bandje, zelfde opmaak als de compacte header
+                            Surface(
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .padding(top = 28.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                                shadowElevation = 2.dp
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        buildAnnotatedString {
+                                            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("SpinFlow") }
+                                            append(" PLAYER")
+                                        },
+                                        style = MaterialTheme.typography.titleLarge,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1
+                                    )
+                                    Text(
+                                        "Music Assistant Queue Control",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+
+                            // Nieuwe playlist/zender = nieuw bandje: kies willekeurig kant A of B
+                            val cassetteSide = remember(activePlaylistName) {
+                                if (Random.nextBoolean()) "A" else "B"
+                            }
+                            CassetteLabel(
+                                side = cassetteSide,
+                                title = if (isPlaying && !activePlaylistName.isNullOrBlank()) {
+                                    activePlaylistName
                                 } else {
-                                    "NU SPELEND"
+                                    "Nu spelend"
                                 },
                                 modifier = Modifier
-                                    .statusBarsPadding()
-                                    .padding(start = 125.dp, top = 34.dp, end = 84.dp),
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.bodyLarge.copy(
-                                    color = Color(0xFFFAF3E0),
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace
-                                )
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = 14.dp, start = 18.dp, end = 18.dp)
+                                    .fillMaxWidth()
                             )
 
                             Row(
                                 modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .statusBarsPadding()
-                                    .padding(top = 22.dp, end = 6.dp),
+                                    // Links naast het tandwiel (IconButton = 48dp breed)
+                                    .align(Alignment.BottomEnd)
+                                    .padding(bottom = 4.dp, end = 54.dp)
+                                    .height(48.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
@@ -472,12 +510,21 @@ fun PlayerScreen(
                             context.startActivity(intent)
                         }
                     ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_mass_logo),
-                            contentDescription = "Open Music Assistant",
-                            tint = Color.Unspecified,
-                            modifier = Modifier.size(24.dp)
-                        )
+                        // Huisje in de steunkleur van het thema, letters in de contrastkleur erop
+                        Box(modifier = Modifier.size(24.dp)) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_mass_logo_house),
+                                contentDescription = "Open Music Assistant",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_mass_logo_letters),
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
 
                     IconButton(onClick = {
@@ -3493,4 +3540,90 @@ private fun formatDuration(seconds: Int?): String {
     val m = seconds / 60
     val s = seconds % 60
     return "%d:%02d".format(m, s)
+}
+
+private val CassetteMarker = FontFamily(Font(R.font.permanent_marker))
+private val LabelPaper = Color(0xFFF8F3E3)
+private val LabelInk = Color(0xFF1B1A17)
+private val LabelRule = Color(0x332B2823)
+
+/**
+ * Papieren etiket op het cassettebandje, met de naam "met stift" geschreven,
+ * zoals vroeger op zelf opgenomen bandjes.
+ */
+@Composable
+private fun CassetteLabel(side: String, title: String, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .rotate(-1.5f)
+            .shadow(3.dp, RoundedCornerShape(3.dp))
+            .clip(RoundedCornerShape(3.dp))
+            .background(LabelPaper)
+    ) {
+        Column {
+            // Bies bovenaan het etiket in de steunkleur van het thema
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .background(MaterialTheme.colorScheme.primary)
+            )
+            Row(
+                modifier = Modifier.padding(start = 8.dp, end = 10.dp, top = 5.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .border(1.5.dp, LabelInk, RoundedCornerShape(2.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        side,
+                        style = TextStyle(
+                            fontFamily = CassetteMarker,
+                            fontSize = 18.sp,
+                            color = LabelInk
+                        )
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "SIDE $side",
+                        style = TextStyle(
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.5.sp,
+                            color = LabelInk.copy(alpha = 0.6f)
+                        )
+                    )
+                    Text(
+                        title,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .drawBehind {
+                                // Schrijflijntje onder de tekst
+                                val y = size.height - 2.dp.toPx()
+                                drawLine(LabelRule, Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
+                            },
+                        style = TextStyle(
+                            fontFamily = CassetteMarker,
+                            fontSize = 16.sp,
+                            color = LabelInk
+                        )
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                Icon(
+                    painterResource(R.drawable.spinflow_player_logo),
+                    contentDescription = "SpinFlow",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(30.dp)
+                )
+            }
+        }
+    }
 }
