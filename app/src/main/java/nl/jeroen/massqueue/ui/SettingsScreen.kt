@@ -147,45 +147,82 @@ fun SettingsScreen(
         ) {
             // 1. Server Configuration Card
             item {
-                SettingsSectionCard(
-                    title = "Music Assistant Server",
-                    subtitle = "Samen met Home Assistant JSON-RPC & WebSocket",
-                    icon = Icons.Outlined.Dns
-                ) {
-                    OutlinedTextField(
-                        value = url,
-                        onValueChange = { url = it },
-                        label = { Text("Server Adres (URL)") },
-                        placeholder = { Text("https://homeassistant.<tailnet>.ts.net") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        leadingIcon = { Icon(Icons.Outlined.Link, contentDescription = null) },
-                        shape = RoundedCornerShape(12.dp)
-                    )
-
-                    Spacer(Modifier.height(12.dp))
-
-                    var showToken by remember { mutableStateOf(false) }
-                    OutlinedTextField(
-                        value = token,
-                        onValueChange = { token = it },
-                        label = { Text("API Access Token (Optioneel)") },
-                        placeholder = { Text("Plak hier je long-lived access token") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        leadingIcon = { Icon(Icons.Outlined.Key, contentDescription = null) },
-                        trailingIcon = {
-                            IconButton(onClick = { showToken = !showToken }) {
-                                Icon(
-                                    if (showToken) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                                    contentDescription = if (showToken) "Token verbergen" else "Token tonen"
+                SettingsSectionCard {
+                    // Uitklapbaar zoals Kleurthema; bij de eerste start (nog geen adres) meteen open
+                    var serverExpanded by remember { mutableStateOf(initialUrl.isBlank()) }
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { serverExpanded = !serverExpanded }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "Music Assistant Server",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    url.trim().ifBlank { "Nog niet ingesteld" },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
-                        },
-                        visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        shape = RoundedCornerShape(12.dp)
-                    )
+                            Spacer(Modifier.width(8.dp))
+                            Icon(
+                                if (serverExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                contentDescription = if (serverExpanded) "Server-instellingen inklappen" else "Server-instellingen uitklappen"
+                            )
+                        }
+                    }
+
+                    if (serverExpanded) {
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = url,
+                            onValueChange = { url = it },
+                            label = { Text("Server Adres (URL)") },
+                            placeholder = { Text("https://homeassistant.<tailnet>.ts.net") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            leadingIcon = { Icon(Icons.Outlined.Link, contentDescription = null) },
+                            shape = RoundedCornerShape(12.dp)
+                        )
+
+                        Spacer(Modifier.height(12.dp))
+
+                        var showToken by remember { mutableStateOf(false) }
+                        OutlinedTextField(
+                            value = token,
+                            onValueChange = { token = it },
+                            label = { Text("API Access Token (Optioneel)") },
+                            placeholder = { Text("Plak hier je long-lived access token") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            leadingIcon = { Icon(Icons.Outlined.Key, contentDescription = null) },
+                            trailingIcon = {
+                                IconButton(onClick = { showToken = !showToken }) {
+                                    Icon(
+                                        if (showToken) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                        contentDescription = if (showToken) "Token verbergen" else "Token tonen"
+                                    )
+                                }
+                            },
+                            visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
                 }
             }
 
@@ -367,11 +404,8 @@ fun SettingsScreen(
 
             // 3. Header Layout Card
             item {
-                SettingsSectionCard(
-                    title = "Header Lay-out",
-                    subtitle = "Kies tussen de cassette-banner of een compacte minimale header",
-                    icon = Icons.Outlined.ViewStream
-                ) {
+                // Geen kop: de rij met de schakelaar zegt genoeg
+                SettingsSectionCard {
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
