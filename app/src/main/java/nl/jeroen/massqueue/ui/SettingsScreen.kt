@@ -152,7 +152,7 @@ fun SettingsScreen(
                     var serverExpanded by remember { mutableStateOf(initialUrl.isBlank()) }
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        color = Color.Transparent, // geen binnenvlak: icoon op één lijn met de andere kaarten
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
@@ -161,9 +161,11 @@ fun SettingsScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                                .padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            SettingsRoundIcon(Icons.Outlined.Dns)
+                            Spacer(Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     "Music Assistant Server",
@@ -234,7 +236,7 @@ fun SettingsScreen(
                     var phoneExpanded by remember { mutableStateOf(false) }
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        color = Color.Transparent, // geen binnenvlak: icoon op één lijn met de andere kaarten
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
@@ -243,9 +245,11 @@ fun SettingsScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                                .padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            SettingsRoundIcon(Icons.Outlined.PhoneAndroid)
+                            Spacer(Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     "Telefoon als speler",
@@ -408,7 +412,7 @@ fun SettingsScreen(
                 SettingsSectionCard {
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        color = Color.Transparent, // geen binnenvlak: icoon op één lijn met de andere kaarten
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
@@ -417,9 +421,11 @@ fun SettingsScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                                .padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            SettingsRoundIcon(Icons.Outlined.ViewStream)
+                            Spacer(Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     "Compacte Minimalist Header",
@@ -814,6 +820,25 @@ fun SettingsScreen(
     }
 }
 
+/** Rond icoontje in de themakleur, vóór de titel van een instelling. */
+@Composable
+private fun SettingsRoundIcon(icon: ImageVector) {
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primaryContainer),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
 @Composable
 private fun SettingsSectionCard(
     title: String? = null,
@@ -832,20 +857,7 @@ private fun SettingsSectionCard(
             // Kop (icoon, titel, uitleg) is optioneel
             if (title != null && subtitle != null && icon != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primaryContainer),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            icon,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                    SettingsRoundIcon(icon)
                     Spacer(Modifier.width(12.dp))
                     Column {
                         Text(
