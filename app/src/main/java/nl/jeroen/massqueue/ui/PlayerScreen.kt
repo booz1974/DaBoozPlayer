@@ -274,12 +274,13 @@ fun PlayerScreen(
                         TopAppBar(
                             title = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Image(
-                                        painterResource(R.drawable.spinflow_logo),
-                                        contentDescription = null,
+                                    Icon(
+                                        painterResource(R.drawable.spinflow_player_logo),
+                                        contentDescription = "SpinFlow",
+                                        tint = Color.Unspecified,
                                         modifier = Modifier
                                             .padding(end = 10.dp)
-                                            .size(width = 43.dp, height = 40.dp)
+                                            .size(36.dp)
                                     )
                                     Column {
                                         Text(
@@ -359,7 +360,7 @@ fun PlayerScreen(
                             ) { playing ->
                                 AsyncImage(
                                     model = if (playing) playRequest else stopRequest,
-                                    contentDescription = "DA_BOOZ_PLAYER",
+                                    contentDescription = "SpinFlow",
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.FillWidth
                                 )

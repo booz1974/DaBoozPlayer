@@ -1,6 +1,7 @@
 package nl.jeroen.massqueue.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -31,9 +32,10 @@ import nl.jeroen.massqueue.BuildConfig
 import nl.jeroen.massqueue.MassLocation
 import nl.jeroen.massqueue.MassPlayer
 import nl.jeroen.massqueue.ui.theme.AppTheme
+import nl.jeroen.massqueue.ui.theme.colorSchemeFor
 
 /**
- * Modern retro-futuristic Settings Screen for Da Booz Player
+ * Modern retro-futuristic Settings Screen for SpinFlow
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,7 +90,7 @@ fun SettingsScreen(
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
                         )
                         Text(
-                            "Da Booz Player & Music Assistant",
+                            "SpinFlow & Music Assistant",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
@@ -186,7 +188,42 @@ fun SettingsScreen(
                     subtitle = "Kies jouw favoriete kleurenpalet voor de app",
                     icon = Icons.Outlined.Palette
                 ) {
-                    AppTheme.entries.forEach { theme ->
+                    var themesExpanded by remember { mutableStateOf(false) }
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { themesExpanded = !themesExpanded }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            ThemeSwatches(selectedTheme)
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    selectedTheme.displayName,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    selectedTheme.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Icon(
+                                if (themesExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                contentDescription = if (themesExpanded) "Thema's inklappen" else "Thema's uitklappen"
+                            )
+                        }
+                    }
+                    if (themesExpanded) AppTheme.entries.forEach { theme ->
                         val isSelected = theme == selectedTheme
                         Surface(
                             shape = RoundedCornerShape(12.dp),
@@ -209,6 +246,8 @@ fun SettingsScreen(
                                     onClick = { onSelectTheme?.invoke(theme) }
                                 )
                                 Spacer(Modifier.width(8.dp))
+                                ThemeSwatches(theme)
+                                Spacer(Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         theme.displayName,
@@ -453,7 +492,7 @@ fun SettingsScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        "Da Booz Player v${BuildConfig.VERSION_NAME} — Music Assistant Client",
+                        "SpinFlow v${BuildConfig.VERSION_NAME} — Music Assistant Client",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -837,6 +876,23 @@ private fun PlayerChecklistSheet(
                     }
                 }
             }
+        }
+    }
+}
+
+/** Small overlapping color dots previewing a theme's background, primary and secondary colors. */
+@Composable
+private fun ThemeSwatches(theme: AppTheme) {
+    val scheme = colorSchemeFor(theme)
+    Row(horizontalArrangement = Arrangement.spacedBy((-6).dp)) {
+        listOf(scheme.background, scheme.primary, scheme.secondary).forEach { color ->
+            Box(
+                modifier = Modifier
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .background(color)
+                    .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+            )
         }
     }
 }

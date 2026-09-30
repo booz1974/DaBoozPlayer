@@ -1,6 +1,6 @@
-# Da Booz Player — Native Music Assistant App
+# SpinFlow — Native Music Assistant App
 
-![Da Booz Player](docs/banner.jpg)
+![SpinFlow](docs/banner.jpg)
 
 Een moderne, native Android-app voor het bedienen van je **Music Assistant** (MA) server. Deze app is ontworpen om een snelle en betrouwbare interface te bieden, onafhankelijk van de Home Assistant Ingress-proxy, met slimme functies voor thuisgebruik.
 

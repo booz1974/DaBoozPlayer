@@ -18,7 +18,7 @@ android {
         targetSdk = 34
         versionCode = 2
         versionName = "3.2"
-        resValue("string", "app_name", "Da Booz Player")
+        resValue("string", "app_name", "SpinFlow")
         buildConfigField(
             "String", "BUILD_TIME",
             "\"${SimpleDateFormat("yyyy-MM-dd HH:mm").format(Date())}\""
