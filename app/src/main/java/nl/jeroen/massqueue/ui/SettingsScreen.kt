@@ -29,8 +29,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import nl.jeroen.massqueue.BuildConfig
+import nl.jeroen.massqueue.DEFAULT_SENDSPIN_CLIENT_NAME
+import nl.jeroen.massqueue.DEFAULT_SENDSPIN_LOCAL_URL
 import nl.jeroen.massqueue.MassLocation
 import nl.jeroen.massqueue.MassPlayer
+import nl.jeroen.massqueue.PhonePlayerStatus
 import nl.jeroen.massqueue.ui.theme.AppTheme
 import nl.jeroen.massqueue.ui.theme.colorSchemeFor
 
@@ -66,6 +69,12 @@ fun SettingsScreen(
     onSelectDiscoPlayer: ((String) -> Unit)? = null,
     pinnedPlayerIds: Set<String> = emptySet(),
     onTogglePinnedPlayer: ((String) -> Unit)? = null,
+    phonePlayerEnabled: Boolean = false,
+    phonePlayerName: String = DEFAULT_SENDSPIN_CLIENT_NAME,
+    phonePlayerLocalUrl: String = DEFAULT_SENDSPIN_LOCAL_URL,
+    phonePlayerStatus: PhonePlayerStatus = PhonePlayerStatus(),
+    onTogglePhonePlayer: ((Boolean) -> Unit)? = null,
+    onSavePhonePlayer: ((name: String, localUrl: String) -> Unit)? = null,
     onClose: (() -> Unit)? = null
 ) {
     var url by remember(initialUrl) { mutableStateOf(initialUrl) }
@@ -178,6 +187,92 @@ fun SettingsScreen(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         shape = RoundedCornerShape(12.dp)
                     )
+                }
+            }
+
+            // Telefoon als speler (Sendspin)
+            item {
+                SettingsSectionCard(
+                    title = "Telefoon als speler",
+                    subtitle = "Speel muziek van Music Assistant af op deze telefoon, ook op de achtergrond",
+                    icon = Icons.Outlined.PhoneAndroid
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onTogglePhonePlayer?.invoke(!phonePlayerEnabled) }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "Telefoon als speler",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    if (phonePlayerEnabled) phonePlayerStatus.text
+                                    else "Uit: deze telefoon verschijnt niet als speler in MA",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (phonePlayerEnabled && phonePlayerStatus.isError) MaterialTheme.colorScheme.error
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Switch(
+                                checked = phonePlayerEnabled,
+                                onCheckedChange = { onTogglePhonePlayer?.invoke(it) }
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    var phoneName by remember(phonePlayerName) { mutableStateOf(phonePlayerName) }
+                    var phoneUrl by remember(phonePlayerLocalUrl) { mutableStateOf(phonePlayerLocalUrl) }
+                    OutlinedTextField(
+                        value = phoneName,
+                        onValueChange = { phoneName = it },
+                        label = { Text("Naam in Music Assistant") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        leadingIcon = { Icon(Icons.Outlined.Badge, contentDescription = null) },
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = phoneUrl,
+                        onValueChange = { phoneUrl = it },
+                        label = { Text("Sendspin-adres thuis (terugval)") },
+                        placeholder = { Text(DEFAULT_SENDSPIN_LOCAL_URL) },
+                        supportingText = { Text("Eerst via het server-adres hierboven, met je API-token; dit adres alleen als dat niet lukt") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        leadingIcon = { Icon(Icons.Outlined.Link, contentDescription = null) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    val changed = phoneName.trim() != phonePlayerName || phoneUrl.trim() != phonePlayerLocalUrl
+                    if (changed) {
+                        Spacer(Modifier.height(8.dp))
+                        Button(
+                            onClick = { onSavePhonePlayer?.invoke(phoneName, phoneUrl) },
+                            enabled = phoneName.isNotBlank(),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.align(Alignment.End)
+                        ) {
+                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Toepassen", fontWeight = FontWeight.SemiBold)
+                        }
+                    }
                 }
             }
 

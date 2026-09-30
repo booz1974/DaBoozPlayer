@@ -71,7 +71,18 @@ De app is zich bewust van zijn locatie om de interface schoon en relevant te hou
 - **Wisselende hoes**: Standaard de albumhoes van het huidige nummer (met iTunes-terugval als de stream er geen meelevert); elke ~30 seconden verschijnt ~5 seconden lang het zenderlogo.
 - **Eerder op deze zender**: Een lijstje met de laatste ~50 nummers die op de zender voorbijkwamen, inclusief het nummer dat nu speelt. Blijft bewaard tussen app-herstarts en wist zichzelf pas bij een echte zenderwissel (niet tijdens het tijdelijk onderbreken van de stream om een geschiedenisnummer af te spelen, en ook niet als je tussendoor een playlist of AI Radio luistert: dan wordt de lijst alleen verborgen). Tik op een nummer en de app zoekt het op in Music Assistant, speelt het nu af op de radio-speler en zet de zender er direct achteraan zodat de stream vanzelf hervat. Via het hartje sla je de geschiedenis (inclusief het huidige nummer) op als favoriete afspeellijst, onder de naam van de zender zoals die nu op het scherm staat.
 
-### 5. Techniek & Connectiviteit
+### 5. Telefoon als speler 📱
+De telefoon kan zelf een Music Assistant-speler zijn: MA speelt dan muziek af op de telefoon, ook met de app op de achtergrond en zonder de MA-webinterface open te hebben.
+- **Aanzetten**: In Instellingen staat de kaart *Telefoon als speler* met een schakelaar, de naam waaronder de telefoon in MA verschijnt (standaard "Spinflow telefoon") en een statusregel (bijv. "Verbonden (via server-adres)" of de reden waarom het niet lukt).
+- **Vaste speler**: De app maakt eenmalig een vaste client-ID aan, zodat MA steeds dezelfde speler ziet. In de spelerslijst staat hij bovenaan als **"Deze telefoon"** met een telefoon-icoon.
+- **Verbinding**: Via [Sendspin](https://github.com/Sendspin): eerst via het server-adres (bijv. over Tailscale) naar `wss://<server>/sendspin`, met het API-token als eerste `auth`-bericht; lukt dat niet, dan thuis rechtstreeks naar de Sendspin-poort (`ws://<MA-host>:8927/sendspin`, instelbaar). Bij mislukken probeert de app het opnieuw met oplopende wachttijd (5 s tot 60 s).
+- **Afspelen**: Ongecomprimeerde PCM via `AudioTrack`, getimed op de klok van de server zodat de telefoon in de pas blijft met andere spelers; kleine afwijkingen worden onhoorbaar bijgestuurd.
+- **Achtergrond & batterij**: Een foreground-service met mediamelding (Media3) houdt de speler actief. Wake- en wifilock worden alleen vastgehouden zolang er echt muziek binnenkomt.
+- **Lockscreen**: Titel, artiest, album en hoes; play/pauze/vorige/volgende gaan als commando naar MA.
+- **Andere geluiden**: Bij een navigatie-aanwijzing gaat de muziek zachter, bij een telefoongesprek is alleen de telefoon even stil (een groep in huis speelt gewoon door). Start een andere muziek-app, dan pauzeert MA.
+- **Let op**: De Sendspin-bibliotheek (`sendspin-jvm`) ondersteunt nog geen Noise-encryptie. MA 2.10 accepteert zulke "legacy" clients nog; in latere MA-versies kan dat verdwijnen.
+
+### 6. Techniek & Connectiviteit
 - **Rechtstreekse Verbinding**: Commando's gaan via JSON-RPC (`POST /api`) direct naar de Music Assistant server; HA-services via de REST API.
 - **Push i.p.v. pollen**: Een WebSocket (`wss://<server>/ws`) authenticeert met een `auth`-commando en levert daarna live events (`player_updated`, `queue_updated`, …). De app ververst binnen ~250 ms op zo'n event i.p.v. elke paar seconden te pollen. Er blijft een trage heartbeat (30 s) als vangnet; valt de socket weg, dan schakelt de app terug naar snel pollen (3 s) en verbindt automatisch opnieuw met oplopende backoff.
 - **Portrait Only**: De app blijft altijd in staande stand voor een consistente ervaring.
@@ -81,8 +92,8 @@ De app is zich bewust van zijn locatie om de interface schoon en relevant te hou
 ## Installatie & Configuratie voor Ontwikkelaars
 
 1. **Android Studio**: Open dit project in Android Studio (Ladybug of nieuwer).
-2. **Command line (optioneel)**: De Gradle-wrapper zit in de repo, dus `./gradlew assembleDebug` (of `gradlew.bat` op Windows) bouwt een debug-APK zonder Android Studio.
-3. **Server Instellen**: Bij de eerste start vraagt de app om de URL van je Music Assistant server en een HA Access Token.
+2. **Command line (optioneel)**: De Gradle-wrapper zit in de repo, dus `./gradlew assembleDebug` (of `gradlew.bat` op Windows) bouwt een debug-APK zonder Android Studio. Nodig: JDK 17 (bijv. de JBR van Android Studio). `sendspin-jvm` komt via JitPack.
+3. **Server Instellen**: Bij de eerste start vraagt de app om de URL van je Music Assistant server en een Access Token. Hetzelfde token wordt gebruikt voor *Telefoon als speler*.
 4. **Locatie**: Geef toestemming voor locatiegebruik voor de slimme filtering.
 
 ---

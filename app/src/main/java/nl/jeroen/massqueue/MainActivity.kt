@@ -146,6 +146,17 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                var sendspin by remember { mutableStateOf<SendspinSettings?>(null) }
+                val phoneStatus by SendspinPlaybackService.status.collectAsState()
+
+                // Telefoon als speler: vaste ID ophalen/aanmaken, en de service starten als hij aan staat
+                LaunchedEffect(Unit) {
+                    val s = settingsStore.loadSendspin()
+                    sendspin = s
+                    viewModel.setPhonePlayer(s.clientId)
+                    if (s.enabled) SendspinPlaybackService.start(this@MainActivity)
+                }
+
                 LaunchedEffect(Unit) {
                     val settings = settingsStore.load()
                     val configured = settingsStore.isConfigured()
@@ -217,6 +228,11 @@ class MainActivity : ComponentActivity() {
                                     onSave = { url, token ->
                                         scope.launch {
                                             settingsStore.save(url, token)
+                                            // Sendspin verbindt via het server-adres met het API-token
+                                            if (sendspin?.enabled == true && (url != loadedUrl || token != loadedToken)) {
+                                                SendspinPlaybackService.stop(this@MainActivity)
+                                                SendspinPlaybackService.start(this@MainActivity)
+                                            }
                                             loadedUrl = url
                                             loadedToken = token
                                             showSettings = false
@@ -271,6 +287,32 @@ class MainActivity : ComponentActivity() {
                                         val next = state.pinnedPlayerIds.let { if (id in it) it - id else it + id }
                                         viewModel.setPinnedPlayerIds(next)
                                         scope.launch { settingsStore.savePinnedPlayers(next) }
+                                    },
+                                    phonePlayerEnabled = sendspin?.enabled == true,
+                                    phonePlayerName = sendspin?.clientName ?: DEFAULT_SENDSPIN_CLIENT_NAME,
+                                    phonePlayerLocalUrl = sendspin?.localUrl ?: DEFAULT_SENDSPIN_LOCAL_URL,
+                                    phonePlayerStatus = phoneStatus,
+                                    onTogglePhonePlayer = { on ->
+                                        sendspin = sendspin?.copy(enabled = on)
+                                        scope.launch {
+                                            settingsStore.saveSendspinEnabled(on)
+                                            if (on) SendspinPlaybackService.start(this@MainActivity)
+                                            else SendspinPlaybackService.stop(this@MainActivity)
+                                        }
+                                    },
+                                    onSavePhonePlayer = { name, localUrl ->
+                                        scope.launch {
+                                            settingsStore.saveSendspinClientName(name)
+                                            settingsStore.saveSendspinLocalUrl(localUrl)
+                                            val s = settingsStore.loadSendspin()
+                                            sendspin = s
+                                            viewModel.setPhonePlayer(s.clientId)
+                                            // Nieuwe naam/adres: opnieuw verbinden
+                                            if (s.enabled) {
+                                                SendspinPlaybackService.stop(this@MainActivity)
+                                                SendspinPlaybackService.start(this@MainActivity)
+                                            }
+                                        }
                                     },
                                     onClose = if (loadedUrl?.isNotBlank() == true) { { showSettings = false } } else null
                                 )

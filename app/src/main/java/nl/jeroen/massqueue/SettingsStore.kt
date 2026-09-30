@@ -31,6 +31,36 @@ private val KEY_THEME = stringPreferencesKey("app_theme")
 private val KEY_COMPACT_HEADER = booleanPreferencesKey("compact_header")
 private val KEY_DISCO_PLAYER = stringPreferencesKey("disco_player_id")
 private val KEY_PINNED_PLAYERS = stringSetPreferencesKey("pinned_players")
+private val KEY_SENDSPIN_CLIENT_ID = stringPreferencesKey("sendspin_client_id")
+private val KEY_SENDSPIN_CLIENT_NAME = stringPreferencesKey("sendspin_client_name")
+private val KEY_SENDSPIN_ENABLED = booleanPreferencesKey("sendspin_enabled")
+private val KEY_SENDSPIN_LOCAL_URL = stringPreferencesKey("sendspin_local_url")
+
+const val DEFAULT_SENDSPIN_CLIENT_NAME = "Spinflow telefoon"
+// Eigen Sendspin-poort van MA; 8095/sendspin is de web-player-proxy en eist eerst een auth-bericht
+const val DEFAULT_SENDSPIN_LOCAL_URL = "ws://192.168.1.100:8927/sendspin"
+
+/** Instellingen voor "Telefoon als speler" (Sendspin-client). */
+data class SendspinSettings(
+    /** Eenmalig gegenereerd en daarna vast, zodat MA steeds dezelfde speler ziet. */
+    val clientId: String,
+    val clientName: String,
+    val enabled: Boolean,
+    /** Directe Sendspin-poort op het thuisnetwerk (zonder auth); terugval als de proxy niet lukt. */
+    val localUrl: String,
+    /** Afgeleid van het server-adres (Tailscale): https://host → wss://host/sendspin. */
+    val externalUrl: String?,
+    /** API-token van de server; MA's /sendspin-proxy eist het als eerste bericht. */
+    val token: String
+)
+
+/** https://host.ts.net → wss://host.ts.net/sendspin; http → ws. Leeg adres → null. */
+fun sendspinUrlFromServerUrl(serverUrl: String): String? {
+    var url = serverUrl.trim().trimEnd('/')
+    if (url.isBlank()) return null
+    if (!url.startsWith("http")) url = "https://$url"
+    return url.replaceFirst("https://", "wss://").replaceFirst("http://", "ws://") + "/sendspin"
+}
 
 data class SettingsData(
     val url: String,
@@ -298,6 +328,46 @@ class SettingsStore(private val context: Context) {
     suspend fun saveCompactHeader(compact: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[KEY_COMPACT_HEADER] = compact
+        }
+    }
+
+    /** Laadt de Sendspin-instellingen; genereert (en bewaart) de client-ID bij de eerste keer. */
+    suspend fun loadSendspin(): SendspinSettings {
+        if (context.dataStore.data.first()[KEY_SENDSPIN_CLIENT_ID].isNullOrBlank()) {
+            context.dataStore.edit {
+                if (it[KEY_SENDSPIN_CLIENT_ID].isNullOrBlank()) {
+                    it[KEY_SENDSPIN_CLIENT_ID] = "spinflow-" + java.util.UUID.randomUUID().toString()
+                }
+            }
+        }
+        val prefs = context.dataStore.data.first()
+        return SendspinSettings(
+            clientId = prefs[KEY_SENDSPIN_CLIENT_ID]!!,
+            clientName = prefs[KEY_SENDSPIN_CLIENT_NAME]?.takeIf { it.isNotBlank() } ?: DEFAULT_SENDSPIN_CLIENT_NAME,
+            enabled = prefs[KEY_SENDSPIN_ENABLED] ?: false,
+            localUrl = prefs[KEY_SENDSPIN_LOCAL_URL]?.takeIf { it.isNotBlank() } ?: DEFAULT_SENDSPIN_LOCAL_URL,
+            externalUrl = sendspinUrlFromServerUrl(prefs[KEY_URL].orEmpty()),
+            token = prefs[KEY_TOKEN].orEmpty().let { stored ->
+                if (TokenCipher.isEncrypted(stored)) TokenCipher.decrypt(stored).orEmpty() else stored
+            }
+        )
+    }
+
+    suspend fun saveSendspinEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_SENDSPIN_ENABLED] = enabled
+        }
+    }
+
+    suspend fun saveSendspinClientName(name: String) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_SENDSPIN_CLIENT_NAME] = name.trim()
+        }
+    }
+
+    suspend fun saveSendspinLocalUrl(url: String) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_SENDSPIN_LOCAL_URL] = url.trim()
         }
     }
 }

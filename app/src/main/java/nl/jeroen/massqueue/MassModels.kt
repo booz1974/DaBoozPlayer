@@ -23,7 +23,9 @@ data class MassPlayer(
     /** Groepsspeler (bv. sync group) waar deze speler nu deel van uitmaakt. */
     val activeGroup: String? = null,
     /** Spelers waarmee MA deze speler laat groeperen; null als MA dat niet meestuurt. */
-    val canGroupWith: Set<String>? = null
+    val canGroupWith: Set<String>? = null,
+    /** Player-ID's van de protocol-spelers achter deze (universal) speler, bv. een Sendspin-client-ID. */
+    val outputProtocolIds: Set<String> = emptySet()
 ) {
     /** Groepsspeler (bv. "Woonkamer totaal"): volume_level is daar 0/leeg, group_volume is leidend. */
     val isGroup: Boolean
@@ -345,8 +347,16 @@ data class UiState(
     /** In Instellingen gekozen disco-speler; null = zoek op [DISCO_PLAYER_NAME]. */
     val discoPlayerId: String? = null,
     /** Spelers die altijd in de hoofdlijst van de dropdown staan, nooit onder "Overige". */
-    val pinnedPlayerIds: Set<String> = emptySet()
+    val pinnedPlayerIds: Set<String> = emptySet(),
+    /** Vaste Sendspin-client-ID van deze telefoon: player_id, of (MA 2.10+) output_protocol_id onder een universal player. */
+    val phonePlayerClientId: String? = null
 ) {
+    /** Is dit de telefoon zelf (Sendspin-speler van deze app)? */
+    fun isPhonePlayer(player: MassPlayer): Boolean {
+        val id = phonePlayerClientId ?: return false
+        return player.id == id || id in player.outputProtocolIds
+    }
+
     val activeLocation: MassLocation? get() = locations.find { it.id == activeLocationId }
     val homeLat: Double? get() = activeLocation?.lat
     val homeLon: Double? get() = activeLocation?.lon

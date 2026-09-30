@@ -13,6 +13,11 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // Alleen voor sendspin-jvm (geen Maven Central-release)
+        maven {
+            url = uri("https://jitpack.io")
+            content { includeGroup("com.github.Sendspin") }
+        }
     }
 }
 

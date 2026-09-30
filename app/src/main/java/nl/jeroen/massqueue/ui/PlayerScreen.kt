@@ -1675,22 +1675,28 @@ private fun MusicWizard(
  * speler bovenaan, daarna alfabetisch. Zelfde volgorde als de dropdown op het hoofdscherm.
  */
 private fun visibleSortedPlayers(state: UiState): List<MassPlayer> {
-    fun label(player: MassPlayer) = state.playerAliases[player.id] ?: player.name
+    fun label(player: MassPlayer) = playerLabel(player, state)
 
     return state.players.filter { player ->
         player.id == state.selectedPlayerId ||
         !(state.hiddenPlayerIds.contains(player.id) ||
           state.hiddenPlayerIds.contains(player.name.lowercase().trim()))
     }.sortedWith(
-        compareByDescending<MassPlayer> {
-            it.playbackState?.lowercase() == "playing" || state.queueSummaries[it.id]?.isPlaying == true
-        }
+        // Deze telefoon altijd bovenaan
+        compareByDescending<MassPlayer> { state.isPhonePlayer(it) }
+            .thenByDescending {
+                it.playbackState?.lowercase() == "playing" || state.queueSummaries[it.id]?.isPlaying == true
+            }
             .thenByDescending { it.isGroup }
             .thenByDescending { state.queueSummaries[it.id]?.hasItems == true }
             .thenByDescending { state.playerLastPlayingAtMs[it.id] ?: 0L }
             .thenBy { label(it).lowercase() }
     )
 }
+
+/** Naam in de keuzelijst: "Deze telefoon" voor de eigen Sendspin-speler, anders alias of MA-naam. */
+private fun playerLabel(player: MassPlayer, state: UiState): String =
+    if (state.isPhonePlayer(player)) "Deze telefoon" else state.playerAliases[player.id] ?: player.name
 
 /**
  * True zolang de app in beeld is (lifecycle STARTED). Tik-lusjes in de UI (klokjes,
@@ -1710,7 +1716,7 @@ private fun rememberAppVisible(): Boolean {
  * geselecteerd zijn of spelen.
  */
 private fun isSecondaryPlayer(player: MassPlayer, state: UiState): Boolean {
-    if (player.id == state.selectedPlayerId || player.id in state.pinnedPlayerIds) return false
+    if (player.id == state.selectedPlayerId || player.id in state.pinnedPlayerIds || state.isPhonePlayer(player)) return false
     if (player.playbackState?.lowercase() == "playing" || state.queueSummaries[player.id]?.isPlaying == true) return false
     if (player.type.equals("light", ignoreCase = true)) return true
     return state.players.any { it.id != player.id && it.isGroup && player.id in it.groupMembers }
@@ -1730,7 +1736,7 @@ private fun PlayerDropdown(state: UiState, onSelect: (String) -> Unit) {
 
     fun formatPlayerName(player: MassPlayer?): String {
         if (player == null) return ""
-        return state.playerAliases[player.id] ?: player.name
+        return playerLabel(player, state)
     }
 
     val (secondaryPlayers, mainPlayers) = visibleSortedPlayers(state).partition { isSecondaryPlayer(it, state) }
@@ -1851,6 +1857,15 @@ private fun PlayerDropdown(state: UiState, onSelect: (String) -> Unit) {
                                     )
                             )
                             Spacer(Modifier.width(10.dp))
+                            if (state.isPhonePlayer(player)) {
+                                Icon(
+                                    Icons.Filled.PhoneAndroid,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                            }
                             Text(
                                 formatPlayerName(player),
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,

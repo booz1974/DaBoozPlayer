@@ -32,12 +32,13 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        // 17: sendspin-jvm is JDK 17-bytecode (inline-functies vereisen hetzelfde target)
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     kotlinOptions {
-        jvmTarget = "1.8"
+        jvmTarget = "17"
     }
 
     buildFeatures {
@@ -77,6 +78,14 @@ dependencies {
 
     // Lokale instellingen opslaan (server-adres)
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    // Telefoon als MA-speler: Sendspin-client (legacy, zonder Noise-encryptie) + Media3-sessie
+    implementation("com.github.Sendspin:sendspin-jvm:v0.3.4") {
+        // org.json zit al in Android zelf
+        exclude(group = "org.json", module = "json")
+    }
+    implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
+    implementation("androidx.media3:media3-session:1.4.1")
 
     // Locatie services
     implementation("com.google.android.gms:play-services-location:21.3.0")

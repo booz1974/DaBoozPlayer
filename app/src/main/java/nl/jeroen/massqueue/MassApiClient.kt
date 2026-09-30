@@ -139,6 +139,13 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
             val groupMembers = if (membersArr == null) emptyList() else
                 (0 until membersArr.length()).mapNotNull { membersArr.optString(it).takeIf { s -> s.isNotBlank() } }
             // null = MA stuurt het veld niet mee (oudere versie): dan weten we het niet.
+            // MA 2.10+: een Sendspin-speler zit onder een "universal player" (upxxxx);
+            // de onderliggende protocol-speler-ID's staan in output_protocols.
+            val outputProtocolIds = p.optJSONArray("output_protocols")?.let { arr ->
+                (0 until arr.length()).mapNotNull {
+                    arr.optJSONObject(it)?.optString("output_protocol_id")?.takeIf { s -> s.isNotBlank() && s != "native" }
+                }.toSet()
+            } ?: emptySet()
             val canGroupWith = p.optJSONArray("can_group_with")?.let { arr ->
                 (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } }.toSet()
             }
@@ -160,7 +167,8 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
                     groupVolume = if (p.has("group_volume") && !p.isNull("group_volume")) p.optInt("group_volume") else null,
                     syncedTo = p.optString("synced_to").takeIf { it.isNotBlank() && it != "null" },
                     activeGroup = p.optString("active_group").takeIf { it.isNotBlank() && it != "null" },
-                    canGroupWith = canGroupWith
+                    canGroupWith = canGroupWith,
+                    outputProtocolIds = outputProtocolIds
                 )
             )
         }

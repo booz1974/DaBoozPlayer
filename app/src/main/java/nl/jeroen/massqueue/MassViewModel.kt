@@ -520,10 +520,17 @@ class MassViewModel : ViewModel() {
         }
     }
 
+    private fun isPhonePlayerSelectedAndRunning(): Boolean {
+        val state = _uiState.value
+        val selected = state.players.firstOrNull { it.id == state.selectedPlayerId } ?: return false
+        return SendspinPlaybackService.status.value.running && state.isPhonePlayer(selected)
+    }
+
     /** Voedt de MediaSession/notificatie (lockscreen, bluetooth) met de nu-speelt-info. */
     private fun publishNowPlaying(queue: QueueState?, isPlaying: Boolean) {
         val cur = queue?.currentItem
-        if (cur == null) {
+        if (cur == null || isPhonePlayerSelectedAndRunning()) {
+            // Speelt de telefoon zelf? Dan toont SendspinPlaybackService de mediamelding al.
             NowPlayingBus.publish(null)
             return
         }
@@ -886,6 +893,10 @@ class MassViewModel : ViewModel() {
 
     fun setPinnedPlayerIds(ids: Set<String>) {
         _uiState.update { it.copy(pinnedPlayerIds = ids) }
+    }
+
+    fun setPhonePlayer(clientId: String) {
+        _uiState.update { it.copy(phonePlayerClientId = clientId) }
     }
 
     /** Voegt de Hue-discospeler toe aan (of haalt hem uit) de groep die nu geselecteerd is. */
