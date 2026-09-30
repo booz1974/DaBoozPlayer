@@ -73,7 +73,7 @@ De app is zich bewust van zijn locatie om de interface schoon en relevant te hou
 
 ### 5. Telefoon als speler 📱
 De telefoon kan zelf een Music Assistant-speler zijn: MA speelt dan muziek af op de telefoon, ook met de app op de achtergrond en zonder de MA-webinterface open te hebben.
-- **Aanzetten**: In Instellingen staat de kaart *Telefoon als speler* met een schakelaar, de naam waaronder de telefoon in MA verschijnt (standaard "Spinflow telefoon") en een statusregel (bijv. "Verbonden (via server-adres)" of de reden waarom het niet lukt).
+- **Aanzetten**: In Instellingen staat de kaart *Telefoon als speler* met een schakelaar, de naam waaronder de telefoon in MA verschijnt (standaard de appnaam plus het toestelmodel, bijv. "SpinFlow Pixel 8", zodat meerdere toestellen en de Playground-app in MA uit elkaar te houden zijn) en een statusregel (bijv. "Verbonden (via server-adres)" of de reden waarom het niet lukt).
 - **Vaste speler**: De app maakt eenmalig een vaste client-ID aan, zodat MA steeds dezelfde speler ziet. In de spelerslijst staat hij bovenaan als **"Deze telefoon"** met een telefoon-icoon.
 - **Verbinding**: Via [Sendspin](https://github.com/Sendspin): eerst via het server-adres (bijv. over Tailscale) naar `wss://<server>/sendspin`, met het API-token als eerste `auth`-bericht; lukt dat niet, dan thuis rechtstreeks naar de Sendspin-poort (`ws://<MA-host>:8927/sendspin`, instelbaar). Bij mislukken probeert de app het opnieuw met oplopende wachttijd (5 s tot 60 s).
 - **Afspelen**: Ongecomprimeerde PCM via `AudioTrack`, getimed op de klok van de server zodat de telefoon in de pas blijft met andere spelers; kleine afwijkingen worden onhoorbaar bijgestuurd.

@@ -108,7 +108,8 @@ class SendspinPlaybackService : MediaSessionService() {
 
         sessionPlayer = SendspinSessionPlayer(
             sendCommand = { client?.sendControllerCommand(it) },
-            sendSeek = { client?.sendSeek(it) }
+            sendSeek = { client?.sendSeek(it) },
+            idleArtist = defaultSendspinClientName(this)
         )
         session = MediaSession.Builder(this, sessionPlayer)
             .setId("sendspin")

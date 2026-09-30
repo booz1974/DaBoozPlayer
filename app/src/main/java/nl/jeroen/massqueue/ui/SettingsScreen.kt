@@ -29,7 +29,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import nl.jeroen.massqueue.BuildConfig
-import nl.jeroen.massqueue.DEFAULT_SENDSPIN_CLIENT_NAME
 import nl.jeroen.massqueue.DEFAULT_SENDSPIN_LOCAL_URL
 import nl.jeroen.massqueue.MassLocation
 import nl.jeroen.massqueue.MassPlayer
@@ -70,7 +69,7 @@ fun SettingsScreen(
     pinnedPlayerIds: Set<String> = emptySet(),
     onTogglePinnedPlayer: ((String) -> Unit)? = null,
     phonePlayerEnabled: Boolean = false,
-    phonePlayerName: String = DEFAULT_SENDSPIN_CLIENT_NAME,
+    phonePlayerName: String = "",
     phonePlayerLocalUrl: String = DEFAULT_SENDSPIN_LOCAL_URL,
     phonePlayerStatus: PhonePlayerStatus = PhonePlayerStatus(),
     onTogglePhonePlayer: ((Boolean) -> Unit)? = null,

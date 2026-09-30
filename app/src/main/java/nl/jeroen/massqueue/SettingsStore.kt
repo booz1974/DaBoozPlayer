@@ -1,6 +1,7 @@
 package nl.jeroen.massqueue
 
 import android.content.Context
+import android.os.Build
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -36,7 +37,15 @@ private val KEY_SENDSPIN_CLIENT_NAME = stringPreferencesKey("sendspin_client_nam
 private val KEY_SENDSPIN_ENABLED = booleanPreferencesKey("sendspin_enabled")
 private val KEY_SENDSPIN_LOCAL_URL = stringPreferencesKey("sendspin_local_url")
 
-const val DEFAULT_SENDSPIN_CLIENT_NAME = "Spinflow telefoon"
+/** Vroegere vaste standaardnaam; wie die nog opgeslagen heeft, krijgt voortaan de naam met toestelmodel. */
+private const val LEGACY_SENDSPIN_CLIENT_NAME = "Spinflow telefoon"
+
+/**
+ * Standaardnaam in MA: appnaam + toestelmodel, bv. "SpinFlow Pixel 8" of "SpinFlow Playground Pixel 8",
+ * zodat meerdere telefoons, de emulator en de Playground-app in MA uit elkaar te houden zijn.
+ */
+fun defaultSendspinClientName(context: Context): String =
+    "${context.getString(R.string.app_name)} ${Build.MODEL}"
 // Eigen Sendspin-poort van MA; 8095/sendspin is de web-player-proxy en eist eerst een auth-bericht
 const val DEFAULT_SENDSPIN_LOCAL_URL = "ws://192.168.1.100:8927/sendspin"
 
@@ -343,7 +352,9 @@ class SettingsStore(private val context: Context) {
         val prefs = context.dataStore.data.first()
         return SendspinSettings(
             clientId = prefs[KEY_SENDSPIN_CLIENT_ID]!!,
-            clientName = prefs[KEY_SENDSPIN_CLIENT_NAME]?.takeIf { it.isNotBlank() } ?: DEFAULT_SENDSPIN_CLIENT_NAME,
+            clientName = prefs[KEY_SENDSPIN_CLIENT_NAME]
+                ?.takeIf { it.isNotBlank() && it != LEGACY_SENDSPIN_CLIENT_NAME }
+                ?: defaultSendspinClientName(context),
             enabled = prefs[KEY_SENDSPIN_ENABLED] ?: false,
             localUrl = prefs[KEY_SENDSPIN_LOCAL_URL]?.takeIf { it.isNotBlank() } ?: DEFAULT_SENDSPIN_LOCAL_URL,
             externalUrl = sendspinUrlFromServerUrl(prefs[KEY_URL].orEmpty()),

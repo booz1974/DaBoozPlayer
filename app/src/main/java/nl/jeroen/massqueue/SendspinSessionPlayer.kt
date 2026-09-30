@@ -25,7 +25,9 @@ import com.google.common.util.concurrent.ListenableFuture
 @OptIn(UnstableApi::class)
 class SendspinSessionPlayer(
     private val sendCommand: (String) -> Unit,
-    private val sendSeek: (Long) -> Unit
+    private val sendSeek: (Long) -> Unit,
+    /** Tweede regel op de melding zolang MA geen artiest meldt (standaard-spelernaam). */
+    private val idleArtist: String
 ) : SimpleBasePlayer(Looper.getMainLooper()) {
 
     private var playing = false
@@ -66,7 +68,7 @@ class SendspinSessionPlayer(
     override fun getState(): State {
         val metadata = MediaMetadata.Builder()
             .setTitle(title ?: idleText)
-            .setArtist(artist ?: DEFAULT_SENDSPIN_CLIENT_NAME)
+            .setArtist(artist ?: idleArtist)
             .setAlbumTitle(album)
             .apply { artwork?.let { setArtworkData(it, MediaMetadata.PICTURE_TYPE_FRONT_COVER) } }
             .build()

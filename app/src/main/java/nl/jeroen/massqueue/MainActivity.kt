@@ -289,7 +289,7 @@ class MainActivity : ComponentActivity() {
                                         scope.launch { settingsStore.savePinnedPlayers(next) }
                                     },
                                     phonePlayerEnabled = sendspin?.enabled == true,
-                                    phonePlayerName = sendspin?.clientName ?: DEFAULT_SENDSPIN_CLIENT_NAME,
+                                    phonePlayerName = sendspin?.clientName ?: defaultSendspinClientName(this@MainActivity),
                                     phonePlayerLocalUrl = sendspin?.localUrl ?: DEFAULT_SENDSPIN_LOCAL_URL,
                                     phonePlayerStatus = phoneStatus,
                                     onTogglePhonePlayer = { on ->
