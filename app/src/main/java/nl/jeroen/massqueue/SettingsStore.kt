@@ -8,7 +8,10 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "mass_settings")
 
@@ -231,6 +234,10 @@ class SettingsStore(private val context: Context) {
             prefs[KEY_TOKEN] = TokenCipher.encrypt(token)
         }
     }
+
+    /** Geeft een waarde bij elke wijziging van server-adres of token (de eerste is de huidige stand). */
+    fun serverChanges(): Flow<Any> =
+        context.dataStore.data.map { it[KEY_URL] to it[KEY_TOKEN] }.distinctUntilChanged()
 
     suspend fun isConfigured(): Boolean {
         val prefs = context.dataStore.data.first()

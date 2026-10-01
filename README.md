@@ -81,6 +81,15 @@ De telefoon kan zelf een Music Assistant-speler zijn: MA speelt dan muziek af op
 - **Lockscreen**: Titel, artiest, album en hoes; play/pauze/vorige/volgende gaan als commando naar MA.
 - **Andere geluiden**: Bij een navigatie-aanwijzing gaat de muziek zachter, bij een telefoongesprek is alleen de telefoon even stil (een groep in huis speelt gewoon door). Start een andere muziek-app, dan pauzeert MA.
 - **Let op**: De Sendspin-bibliotheek (`sendspin-jvm`) ondersteunt nog geen Noise-encryptie. MA 2.10 accepteert zulke "legacy" clients nog; in latere MA-versies kan dat verdwijnen.
+- **Mobiel netwerk**: Zonder (gevalideerde) wifi vraagt de app MA om ~3 s extra buffer en een grotere buffercapaciteit (1 MB i.p.v. 256 KB), zodat korte dipjes in de mobiele verbinding niet hoorbaar zijn. Op wifi blijft alles als voorheen.
+
+### 5a. Android Auto 🚗
+De telefoon-als-speler is ook een mediabron voor Android Auto (Media3 `MediaLibraryService`). Wat je in de auto kiest, speelt MA af op deze telefoon; de app zelf ziet er niet anders uit.
+- **Bladeren**: *Favorieten* (favoriete playlists) en *Radio* (favoriete zenders), met hoezen. De hoezen gaan via een eigen `ArtworkProvider`, omdat Android Auto het API-token niet kent; die geeft alleen afbeeldingen door.
+- **Zoeken**: In de auto zoeken (of "Hey Google, speel … op SpinFlow") doorzoekt de MA-bibliotheek; bij een gesproken opdracht speelt de beste treffer (exacte naam, anders het eerste nummer).
+- **Wachtrij**: De MA-wachtrij (2 vorige + tot 50 volgende) staat in de wachtrijweergave; tik op een nummer om erheen te springen.
+- **Knoppen**: Shuffle, herhalen (uit → alles → één) en favoriet maken. Alleen zichtbaar zolang Android Auto verbonden is; melding en lockscreen van de telefoon blijven verder ongewijzigd.
+- **Telefoon als speler uit?** Dan doet de telefoon tijdelijk mee zolang Android Auto verbonden is; de instelling blijft uit.
 
 ### 6. Techniek & Connectiviteit
 - **Rechtstreekse Verbinding**: Commando's gaan via JSON-RPC (`POST /api`) direct naar de Music Assistant server; HA-services via de REST API.

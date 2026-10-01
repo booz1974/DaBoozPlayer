@@ -1,5 +1,6 @@
 package nl.jeroen.massqueue
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -48,6 +49,8 @@ class PlaybackService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    // Dit is de sessie voor de andere MA-spelers; Android Auto (incl. zoeken) gebruikt SendspinPlaybackService
+    @SuppressLint("MissingOnPlayFromSearch")
     override fun onCreate() {
         super.onCreate()
         createChannel()

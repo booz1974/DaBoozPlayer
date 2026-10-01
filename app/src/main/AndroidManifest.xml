@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -13,7 +14,18 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
+    <!-- Android Auto: verbindingsstatus uitlezen (content://androidx.car.app.connection) -->
+    <queries>
+        <package android:name="com.google.android.projection.gearhead" />
+    </queries>
+
+    <!--
+        MissingIntentFilterForMediaSearch: gesproken zoeken loopt in Android Auto via de
+        MediaSession (SendspinPlaybackService); een MEDIA_PLAY_FROM_SEARCH-filter zou de
+        Assistent op de telefoon het app-scherm laten openen.
+    -->
     <application
+        tools:ignore="MissingIntentFilterForMediaSearch"
         android:name=".MassApp"
         android:allowBackup="false"
         android:fullBackupContent="false"
@@ -50,17 +62,30 @@
         </service>
 
         <!--
-            Telefoon als MA-speler. Bewust géén MEDIA_BUTTON-filter: de MediaButtonReceiver
-            hieronder eist precies één service met die filter (PlaybackService) en crasht anders.
+            Telefoon als MA-speler, en de mediabron voor Android Auto (MediaLibraryService).
+            Bewust géén MEDIA_BUTTON-filter: de MediaButtonReceiver hieronder eist precies één
+            service met die filter (PlaybackService) en crasht anders.
         -->
         <service
             android:name=".SendspinPlaybackService"
             android:exported="true"
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>
+                <action android:name="androidx.media3.session.MediaLibraryService" />
                 <action android:name="androidx.media3.session.MediaSessionService" />
+                <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
+
+        <!-- Hoezen voor Android Auto, opgehaald met het API-token (alleen afbeeldingen) -->
+        <provider
+            android:name=".ArtworkProvider"
+            android:authorities="${applicationId}.artwork"
+            android:exported="true" />
+
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
 
         <receiver
             android:name="androidx.media.session.MediaButtonReceiver"

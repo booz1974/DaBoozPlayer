@@ -292,7 +292,8 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
             shuffleEnabled = shuffleEnabled,
             playlistName = playlistName,
             activeSourceUri = activeSourceUri,
-            elapsedTime = elapsedTime
+            elapsedTime = elapsedTime,
+            repeatMode = queueResult.optString("repeat_mode").ifBlank { "off" }
         )
     }
 
@@ -857,6 +858,14 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
         }
         // Dit commando husselt de huidige wachtrij direct door elkaar
         call("player_queues/shuffle", args)
+    }
+
+    /** repeatMode: "off", "one" of "all". */
+    suspend fun setRepeat(playerId: String, repeatMode: String) {
+        call(
+            "player_queues/repeat",
+            JSONObject().put("queue_id", playerId).put("repeat_mode", repeatMode)
+        )
     }
 
     suspend fun playIndex(playerId: String, index: Int) {

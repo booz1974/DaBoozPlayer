@@ -285,7 +285,9 @@ data class QueueState(
     val shuffleEnabled: Boolean = false,
     val playlistName: String? = null,
     val activeSourceUri: String? = null,
-    val elapsedTime: Int? = null
+    val elapsedTime: Int? = null,
+    /** MA-herhaalstand: "off", "one" of "all". */
+    val repeatMode: String = "off"
 ) {
     val currentItem: QueueTrack? get() = items.find { it.absoluteIndex == currentIndex }
     val pastItems: List<QueueTrack> get() = items.filter { it.absoluteIndex < currentIndex }
