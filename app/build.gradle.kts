@@ -1,5 +1,12 @@
 import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Properties
+
+fun localProperty(key: String): String? {
+    val file = rootProject.file("local.properties")
+    if (!file.exists()) return null
+    return Properties().apply { file.inputStream().use { load(it) } }.getProperty(key)?.takeIf { it.isNotBlank() }
+}
 
 plugins {
     id("com.android.application")
@@ -12,8 +19,9 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        // De Playground-kopie gebruikt nl.jeroen.massqueue.playground, zodat beide naast elkaar kunnen staan
-        applicationId = "nl.jeroen.massqueue"
+        // Lokaal te overschrijven via spinflow.applicationId in local.properties (niet in git),
+        // bijv. om een eerder geïnstalleerde versie met een ander ID bij te werken
+        applicationId = localProperty("spinflow.applicationId") ?: "nl.jeroen.massqueue"
         minSdk = 26
         targetSdk = 34
         versionCode = 2
