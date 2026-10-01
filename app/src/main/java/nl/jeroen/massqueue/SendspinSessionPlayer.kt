@@ -133,7 +133,9 @@ class SendspinSessionPlayer(
         val q = queue
         val currentPos = q?.indexOfFirst { it.absoluteIndex == queueCurrent } ?: -1
 
-        val current = MediaItemData.Builder(if (currentPos >= 0) "q$queueCurrent" else "current")
+        val currentId = if (currentPos >= 0) "q$queueCurrent" else "current"
+        val current = MediaItemData.Builder(currentId)
+            .setMediaItem(mediaItem(currentId, metadata))
             .setMediaMetadata(metadata)
             .apply { if (durationMs > 0) setDurationUs(durationMs * 1000) }
             .build()
@@ -189,17 +191,23 @@ class SendspinSessionPlayer(
             .build()
     }
 
-    private fun queueItemData(item: SessionQueueItem): MediaItemData =
-        MediaItemData.Builder("q${item.absoluteIndex}")
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(item.title)
-                    .setArtist(item.subtitle)
-                    .setArtworkUri(item.artworkUri)
-                    .build()
-            )
+    private fun queueItemData(item: SessionQueueItem): MediaItemData {
+        val id = "q${item.absoluteIndex}"
+        val metadata = MediaMetadata.Builder()
+            .setTitle(item.title)
+            .setArtist(item.subtitle)
+            .setArtworkUri(item.artworkUri)
+            .build()
+        return MediaItemData.Builder(id)
+            .setMediaItem(mediaItem(id, metadata))
+            .setMediaMetadata(metadata)
             .apply { if (item.durationMs > 0) setDurationUs(item.durationMs * 1000) }
             .build()
+    }
+
+    /** De wachtrij in Android Auto leest titel en hoes uit het MediaItem, niet uit de losse metadata. */
+    private fun mediaItem(id: String, metadata: MediaMetadata): MediaItem =
+        MediaItem.Builder().setMediaId(id).setMediaMetadata(metadata).build()
 
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
         if (!playWhenReady || SystemClock.elapsedRealtime() > suppressPlayUntil) {
