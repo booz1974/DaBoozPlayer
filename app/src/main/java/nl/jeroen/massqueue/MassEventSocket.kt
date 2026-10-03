@@ -45,7 +45,7 @@ class MassEventSocket {
     private var baseUrl: String = ""
     private var authToken: String? = null
 
-    private var ws: WebSocket? = null
+    @Volatile private var ws: WebSocket? = null
     private var reconnectJob: Job? = null
     private var attempts = 0
     private var running = false
@@ -57,12 +57,14 @@ class MassEventSocket {
     val connected: StateFlow<Boolean> = _connected.asStateFlow()
 
     fun updateConfig(newBaseUrl: String, newToken: String?) {
+        val changed = newBaseUrl != baseUrl || newToken != authToken
         baseUrl = newBaseUrl
         authToken = newToken
-        if (running) {
-            // Forceer een verse verbinding met de nieuwe config.
+        // Alleen bij een echte wijziging opnieuw verbinden; configureServer() wordt ook
+        // aangeroepen bij bv. Instellingen opslaan zonder dat het adres/token verandert.
+        if (running && changed) {
             attempts = 0
-            closeCurrent()
+            reconnectJob?.cancel()
             connect()
         }
     }
@@ -84,8 +86,10 @@ class MassEventSocket {
     // ---- intern ------------------------------------------------------------
 
     private fun closeCurrent() {
-        runCatching { ws?.close(1000, null) }
+        // Eerst loskoppelen: de onClosed van deze oude socket mag daarna niets meer doen.
+        val old = ws
         ws = null
+        runCatching { old?.close(1000, null) }
     }
 
     private fun wsUrl(): String {
@@ -106,14 +110,12 @@ class MassEventSocket {
         // Auth gaat via een `auth`-commando na connect (niet via header/queryparam).
         val request = Request.Builder().url(wsUrl()).build()
 
+        // Callbacks van een socket die al vervangen is (webSocket !== ws) negeren we. Anders
+        // plant het sluiten van de oude socket een reconnect die de nieuwe weer sluit, enz.:
+        // een eindeloze herverbind-lus van ~2 s.
         ws = client.newWebSocket(request, object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) {
-                attempts = 0
-                // 'connected' pas na succesvolle auth (dan stromen de events).
-            }
-
             override fun onMessage(webSocket: WebSocket, text: String) {
-                handleMessage(text)
+                if (webSocket === ws) handleMessage(webSocket, text)
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
@@ -121,11 +123,13 @@ class MassEventSocket {
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                if (webSocket !== ws) return
                 _connected.value = false
                 scheduleReconnect()
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                if (webSocket !== ws) return
                 _connected.value = false
                 android.util.Log.w("MassWS", "verbinding mislukt: ${t.message}")
                 scheduleReconnect()
@@ -133,13 +137,13 @@ class MassEventSocket {
         })
     }
 
-    private fun handleMessage(text: String) {
+    private fun handleMessage(webSocket: WebSocket, text: String) {
         val json = runCatching { JSONObject(text) }.getOrNull() ?: return
 
         // Server-info bij connect (geen 'event', wel versievelden): authenticeren.
         if (json.has("server_version") || json.has("schema_version")) {
             if (!authToken.isNullOrBlank()) {
-                ws?.send("{\"command\":\"auth\",\"message_id\":\"auth\",\"args\":{\"token\":\"$authToken\"}}")
+                webSocket.send("{\"command\":\"auth\",\"message_id\":\"auth\",\"args\":{\"token\":\"$authToken\"}}")
             }
             return
         }
@@ -149,8 +153,12 @@ class MassEventSocket {
         if (json.optString("message_id") == "auth") {
             val ok = json.optJSONObject("result")?.optBoolean("authenticated") == true
             if (ok) {
+                // Backoff pas resetten als de verbinding echt bruikbaar is; een server die
+                // direct na het openen weer sluit, krijgt zo een oplopende wachttijd.
+                attempts = 0
+                if (BuildConfig.DEBUG) android.util.Log.d("MassWS", "verbonden en geauthenticeerd")
                 _connected.value = true
-                ws?.send("{\"command\":\"players/all\",\"message_id\":\"kick\",\"args\":{}}")
+                webSocket.send("{\"command\":\"players/all\",\"message_id\":\"kick\",\"args\":{}}")
             } else {
                 android.util.Log.w("MassWS", "auth geweigerd")
             }

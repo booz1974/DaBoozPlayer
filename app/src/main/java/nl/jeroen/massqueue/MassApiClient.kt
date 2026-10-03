@@ -1,6 +1,9 @@
 package nl.jeroen.massqueue
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -293,7 +296,13 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
             playlistName = playlistName,
             activeSourceUri = activeSourceUri,
             elapsedTime = elapsedTime,
-            repeatMode = queueResult.optString("repeat_mode").ifBlank { "off" }
+            repeatMode = queueResult.optString("repeat_mode").ifBlank { "off" },
+            // Oudere MA-versies noemen autoplay nog "dont_stop_the_music_enabled".
+            autoplayEnabled = queueResult.optBoolean(
+                "autoplay_enabled",
+                queueResult.optBoolean("dont_stop_the_music_enabled", false)
+            ),
+            crossfadeEnabled = queueResult.optBoolean("crossfade_enabled", false)
         )
     }
 
@@ -336,16 +345,31 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
         return finalUrl
     }
 
+    /**
+     * Pad van één MA-image. Afbeeldingen die alleen op de server staan (bv. `logo.png` of
+     * `/data/playlist_metadata_images/...`, remotely_accessible=false) zijn niet direct op te
+     * halen; die lopen via MA's imageproxy (`/imageproxy/<proxy_id>`), net als in de MA-webapp.
+     */
+    private fun imagePathFrom(img: JSONObject): String? {
+        val path = img.optString("path").ifBlank { img.optString("url") }.takeIf { it.isNotBlank() }
+            ?: return null
+        if (img.optBoolean("remotely_accessible", true)) return path
+        val proxyId = img.optString("proxy_id").takeIf { it.isNotBlank() }
+        return if (proxyId != null) {
+            "/imageproxy/$proxyId?size=256"
+        } else {
+            // Oudere MA-versies zonder proxy_id
+            val enc = java.net.URLEncoder.encode(path, "UTF-8")
+            "/imageproxy?path=$enc&provider=${img.optString("provider")}&size=256"
+        }
+    }
+
     private fun findPathInJson(obj: JSONObject?): String? {
         if (obj == null) return null
         
         // 1. Check "images" lijst (meest voorkomend in MA)
         obj.optJSONArray("images")?.let { arr ->
-            if (arr.length() > 0) {
-                val first = arr.getJSONObject(0)
-                return first.optString("path", "").takeIf { it.isNotBlank() } 
-                    ?: first.optString("url", "").takeIf { it.isNotBlank() }
-            }
+            if (arr.length() > 0) return imagePathFrom(arr.getJSONObject(0))
         }
         
         // 2. Check "image" object
@@ -371,11 +395,7 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
         // 4. Check "metadata" object dieper
         obj.optJSONObject("metadata")?.let { meta ->
             meta.optJSONArray("images")?.let { arr ->
-                if (arr.length() > 0) {
-                    val first = arr.getJSONObject(0)
-                    return first.optString("path").takeIf { it.isNotBlank() } 
-                        ?: first.optString("url").takeIf { it.isNotBlank() }
-                }
+                if (arr.length() > 0) return imagePathFrom(arr.getJSONObject(0))
             }
             listOf("logo", "icon", "thumbnail", "poster", "fanart", "image", "picture").forEach { key ->
                 meta.optString(key).takeIf { it.isNotBlank() }?.let { return it }
@@ -516,7 +536,7 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
         for (i in 0 until arr.length()) {
             val p = arr.getJSONObject(i)
             val uri = p.optString("uri", null) ?: continue
-            
+
             list.add(
                 MassPlaylist(
                     uri = uri,
@@ -526,7 +546,39 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
                 )
             )
         }
-        return list.sortedBy { it.name.lowercase() }
+        // Playlists zonder eigen afbeelding (MA maakt pas een collage vanaf 3 hoezen en niet
+        // altijd): zelf de hoezen van de eerste nummers ophalen.
+        val withCollage = coroutineScope {
+            list.map { pl ->
+                if (pl.imagePath != null) async { pl }
+                else async { pl.copy(collage = playlistCoverImages(pl)) }
+            }.awaitAll()
+        }
+        return withCollage.sortedBy { it.name.lowercase() }
+    }
+
+    /** Tot 4 verschillende hoezen uit de eerste nummers van een playlist; leeg bij fouten. */
+    private suspend fun playlistCoverImages(playlist: MassPlaylist): List<String> {
+        val itemId = playlist.itemIdFromUri ?: return emptyList()
+        val provider = playlist.providerFromUri ?: return emptyList()
+        return try {
+            val resp = call(
+                "music/playlists/playlist_tracks",
+                JSONObject().put("item_id", itemId).put("provider_instance_id_or_domain", provider)
+            )
+            val tracks = resp.optJSONArray("result") ?: return emptyList()
+            val images = LinkedHashSet<String>()
+            for (i in 0 until minOf(tracks.length(), 40)) {
+                val t = tracks.optJSONObject(i) ?: continue
+                resolveImageUrl(t, t.optJSONObject("album"))?.let { images.add(it) }
+                if (images.size >= 4) break
+            }
+            images.toList()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     suspend fun getFavoriteRadios(): List<MassRadio> {
@@ -717,11 +769,37 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
                     uri = uri,
                     title = title,
                     subtitle = subtitle,
-                    imagePath = resolveImageUrl(t, null)
+                    imagePath = resolveImageUrl(t, null),
+                    providers = providerDomains(t)
                 )
             )
         }
         return result
+    }
+
+    /**
+     * Provider-domeinen van een zoekresultaat (bv. "spotify", "ytmusic"). Een bibliotheek-item
+     * telt mee voor elke provider waar het aan gekoppeld is (`provider_mappings`); valt anders
+     * terug op de provider-instantie uit het item zelf (bv. "spotify--a1b2" -> "spotify").
+     */
+    private fun providerDomains(item: JSONObject): Set<String> {
+        val domains = mutableSetOf<String>()
+        item.optJSONArray("provider_mappings")?.let { maps ->
+            for (i in 0 until maps.length()) {
+                val m = maps.optJSONObject(i) ?: continue
+                val domain = m.optString("provider_domain").ifBlank {
+                    m.optString("provider_instance").substringBefore("--")
+                }
+                if (domain.isNotBlank()) domains.add(domain)
+            }
+        }
+        if (domains.isEmpty()) {
+            val own = item.optString("provider").ifBlank { item.optString("uri").substringBefore("://", "") }
+                .substringBefore("--")
+            if (own.isNotBlank()) domains.add(own)
+        }
+        domains.remove("library")
+        return domains
     }
 
     private fun parseSearchArtists(artists: JSONArray?): List<MassArtist> {
@@ -734,7 +812,8 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
                 MassArtist(
                     uri = uri,
                     name = a.optString("name", "Onbekende artiest"),
-                    imagePath = resolveImageUrl(a, null)
+                    imagePath = resolveImageUrl(a, null),
+                    providers = providerDomains(a)
                 )
             )
         }
@@ -763,7 +842,8 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
                         artistNames.joinToString(", ").takeIf { it.isNotBlank() },
                         year
                     ).joinToString(" · "),
-                    imagePath = resolveImageUrl(a, null)
+                    imagePath = resolveImageUrl(a, null),
+                    providers = providerDomains(a)
                 )
             )
         }
@@ -781,7 +861,8 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
                     uri = uri,
                     name = p.optString("name", "Naamloze playlist"),
                     trackCount = if (p.has("track_count")) p.optInt("track_count") else null,
-                    imagePath = resolveImageUrl(p, null)
+                    imagePath = resolveImageUrl(p, null),
+                    providers = providerDomains(p)
                 )
             )
         }
@@ -865,6 +946,30 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
         call(
             "player_queues/repeat",
             JSONObject().put("queue_id", playerId).put("repeat_mode", repeatMode)
+        )
+    }
+
+    /** Autoplay aan/uit; valt terug op het oude "dont_stop_the_music"-commando van oudere MA-versies. */
+    suspend fun setAutoplay(playerId: String, enabled: Boolean) {
+        try {
+            call(
+                "player_queues/autoplay",
+                JSONObject().put("queue_id", playerId).put("autoplay_enabled", enabled)
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            call(
+                "player_queues/dont_stop_the_music",
+                JSONObject().put("queue_id", playerId).put("dont_stop_the_music_enabled", enabled)
+            )
+        }
+    }
+
+    suspend fun setCrossfade(playerId: String, enabled: Boolean) {
+        call(
+            "player_queues/crossfade",
+            JSONObject().put("queue_id", playerId).put("crossfade_enabled", enabled)
         )
     }
 
@@ -989,7 +1094,7 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
 
     suspend fun getAiRadioStations(): List<AiRadioStation> {
         val resp = callAiRadio(
-            listOf("ai_radio/stations/list", "mass/ai_radio/stations/list", "plugin/ai_radio/stations/list")
+            cmd("stations/list")
         )
         return parseAiRadioList(resp) { obj ->
             AiRadioStation(
@@ -1038,14 +1143,14 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
 
     suspend fun getAiRadioHosts(): List<AiRadioHost> {
         val resp = callAiRadio(
-            listOf("ai_radio/hosts/list", "mass/ai_radio/hosts/list", "plugin/ai_radio/hosts/list")
+            cmd("hosts/list")
         )
         return parseAiRadioList(resp) { parseAiRadioHost(it) }
     }
 
     suspend fun getAiRadioSections(): List<AiRadioSection> {
         val resp = callAiRadio(
-            listOf("ai_radio/sections/list", "mass/ai_radio/sections/list", "plugin/ai_radio/sections/list")
+            cmd("sections/list")
         )
         return parseAiRadioList(resp) { parseAiRadioSection(it) }
     }
@@ -1072,8 +1177,9 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
         return list
     }
 
-    private fun cmd(suffix: String) =
-        listOf("ai_radio/$suffix", "mass/ai_radio/$suffix", "plugin/ai_radio/$suffix")
+    // De AI Radio-plugin registreert alleen "ai_radio/..." (zie /api-docs/commands op de server);
+    // de vroegere gok-varianten "mass/ai_radio/..." en "plugin/ai_radio/..." bestaan niet.
+    private fun cmd(suffix: String) = listOf("ai_radio/$suffix")
 
     /**
      * Sommige save-endpoints crashen (500) omdat ze het object genest verwachten
@@ -1322,21 +1428,33 @@ class MassApiClient(baseUrl: String, private var authToken: String? = null) {
 
     // ---- Afspelen ----------------------------------------------------------
 
+    /** Host-id -> naam, zodat de status-poll niet elke keer de hostlijst hoeft op te halen. */
+    private val aiRadioHostNames = mutableMapOf<String, String>()
+
+    /**
+     * DJ-status van één wachtrij. `ai_radio/queue_dj/status` heeft geen argumenten en geeft
+     * de mapping queue_id -> host_id van alle wachtrijen met een actieve DJ.
+     */
     suspend fun getAiRadioQueueStatus(playerId: String): AiRadioQueueStatus? {
-        if ("queue/status" in unsupportedAiRadioCommands) return null
+        if ("queue_dj/status" in unsupportedAiRadioCommands) return null
         val resp = try {
-            callAiRadio(cmd("queue/status"), JSONObject().put("queue_id", playerId))
+            callAiRadio(cmd("queue_dj/status"))
         } catch (e: Exception) {
-            // Deze MA-server kent het endpoint niet: onthouden en niet meer proberen elke poll.
-            if (isInvalidCommand(e)) unsupportedAiRadioCommands += "queue/status"
+            // Deze MA-server kent het endpoint niet (geen AI Radio-plugin): niet meer elke poll proberen.
+            if (isInvalidCommand(e)) unsupportedAiRadioCommands += "queue_dj/status"
             return null
         }
-        val obj = resp.optJSONObject("result") ?: return null
+        val mapping = resp.optJSONObject("result") ?: return null
+        val hostId = mapping.optString(playerId).takeIf { it.isNotBlank() && it != "null" }
+            ?: return AiRadioQueueStatus(queueId = playerId, activeHostId = null, activeHostName = null)
+        if (hostId !in aiRadioHostNames) {
+            runCatching { getAiRadioHosts() }.getOrNull()?.forEach { aiRadioHostNames[it.id] = it.name }
+        }
         return AiRadioQueueStatus(
-            queueId = obj.optString("queue_id", playerId),
-            activeHostId = obj.optString("active_host_id"),
-            activeHostName = obj.optString("active_host_name"),
-            isDjActive = obj.optBoolean("is_dj_active", false)
+            queueId = playerId,
+            activeHostId = hostId,
+            activeHostName = aiRadioHostNames[hostId],
+            isDjActive = true
         )
     }
 

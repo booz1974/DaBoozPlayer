@@ -22,11 +22,14 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -504,6 +507,18 @@ fun PlayerScreen(
                         )
                     }
 
+                    IconButton(onClick = {
+                        viewModel.loadAiRadioData()
+                        showAiDj = true
+                    }) {
+                        Icon(
+                            Icons.Filled.Psychology,
+                            contentDescription = "AI Radio DJ",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
                     IconButton(
                         enabled = state.serverUrl.isNotBlank(),
                         onClick = {
@@ -536,18 +551,6 @@ fun PlayerScreen(
                         Icon(
                             Icons.Filled.Radio,
                             contentDescription = "Favoriete radiozenders",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-
-                    IconButton(onClick = {
-                        viewModel.loadAiRadioData()
-                        showAiDj = true
-                    }) {
-                        Icon(
-                            Icons.Filled.Psychology,
-                            contentDescription = "AI Radio DJ",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(24.dp)
                         )
@@ -725,7 +728,11 @@ fun PlayerScreen(
                                 },
                                 activePlaylistName = activePlaylistName,
                                 elapsedTime = queue.elapsedTime,
-                                onSeek = { viewModel.seek(it) }
+                                onSeek = { viewModel.seek(it) },
+                                crossfadeEnabled = queue.crossfadeEnabled,
+                                autoplayEnabled = queue.autoplayEnabled,
+                                onToggleCrossfade = { viewModel.toggleCrossfade() },
+                                onToggleAutoplay = { viewModel.toggleAutoplay() }
                             )
                             Spacer(Modifier.height(8.dp))
                             TransportRow(
@@ -1553,9 +1560,8 @@ private fun MusicWizard(
                                         .padding(vertical = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    MassImage(
-                                        model = playlist.imagePath,
-                                        fallbackTerm = playlist.name,
+                                    PlaylistCover(
+                                        playlist = playlist,
                                         modifier = Modifier.size(48.dp).clip(RoundedCornerShape(4.dp))
                                     )
                                     Spacer(Modifier.width(12.dp))
@@ -2060,7 +2066,11 @@ private fun NowPlayingHero(
     fallbackTerm: String?,
     activePlaylistName: String?,
     elapsedTime: Int?,
-    onSeek: (Int) -> Unit
+    onSeek: (Int) -> Unit,
+    crossfadeEnabled: Boolean,
+    autoplayEnabled: Boolean,
+    onToggleCrossfade: () -> Unit,
+    onToggleAutoplay: () -> Unit
 ) {
     val songArt = track?.streamImage?.takeIf { it.isNotBlank() }
     val stationArt = track?.imagePath?.takeIf { it.isNotBlank() }
@@ -2207,22 +2217,43 @@ private fun NowPlayingHero(
                         overflow = TextOverflow.Ellipsis
                     )
 
-                    Text(
-                        secondaryText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    // Artiest/album links, rechtsonder de wachtrij-schakelaars van MA.
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                secondaryText,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
 
-                    val albumText = if (hasStreamInfo) track?.streamAlbum?.takeIf { it.isNotBlank() } else null
-                    if (albumText != null) {
-                        Text(
-                            albumText,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            val albumText = if (hasStreamInfo) track?.streamAlbum?.takeIf { it.isNotBlank() } else null
+                            if (albumText != null) {
+                                Text(
+                                    albumText,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        HeroToggleIcon(
+                            icon = Icons.Filled.JoinInner,
+                            description = "Crossfade",
+                            enabled = crossfadeEnabled,
+                            onClick = onToggleCrossfade
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        HeroToggleIcon(
+                            icon = Icons.Filled.AllInclusive,
+                            description = "Autoplay",
+                            enabled = autoplayEnabled,
+                            onClick = onToggleAutoplay
                         )
                     }
                 }
@@ -2287,6 +2318,33 @@ private fun NowPlayingHero(
                 }
             }
         }
+    }
+}
+
+/** Rond aan/uit-icoontje in de titelkaart (crossfade, autoplay); aan = gevuld rondje. */
+@Composable
+private fun HeroToggleIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    val onCard = MaterialTheme.colorScheme.onPrimaryContainer
+    Box(
+        modifier = Modifier
+            .size(26.dp)
+            .clip(CircleShape)
+            .background(if (enabled) onCard.copy(alpha = 0.18f) else Color.Transparent)
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = "$description ${if (enabled) "aan" else "uit"}" },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = if (enabled) onCard else onCard.copy(alpha = 0.4f),
+            modifier = Modifier.size(16.dp)
+        )
     }
 }
 
@@ -2666,9 +2724,8 @@ private fun FavoritesSheet(
                                     .padding(horizontal = 20.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                MassImage(
-                                    model = playlist.imagePath,
-                                    fallbackTerm = playlist.name,
+                                PlaylistCover(
+                                    playlist = playlist,
                                     modifier = Modifier
                                         .size(44.dp)
                                         .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(2.dp))
@@ -2701,6 +2758,36 @@ private fun FavoritesSheet(
                 }
             }
         }
+    }
+}
+
+/**
+ * Hoes van een playlist: de eigen afbeelding, anders een 2x2-collage van de eerste
+ * nummers (of de eerste hoes als er minder dan 4 zijn), anders de iTunes-fallback.
+ */
+@Composable
+private fun PlaylistCover(playlist: MassPlaylist, modifier: Modifier = Modifier) {
+    val collage = playlist.collage
+    when {
+        playlist.imagePath == null && collage.size >= 4 -> {
+            Column(modifier.clip(RoundedCornerShape(2.dp))) {
+                for (row in 0 until 2) {
+                    Row(Modifier.weight(1f)) {
+                        for (col in 0 until 2) {
+                            MassImage(
+                                model = collage[row * 2 + col],
+                                modifier = Modifier.weight(1f).fillMaxHeight()
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        else -> MassImage(
+            model = playlist.imagePath ?: collage.firstOrNull(),
+            fallbackTerm = playlist.name,
+            modifier = modifier
+        )
     }
 }
 
@@ -2799,6 +2886,7 @@ private fun SearchSheet(
     onSelectPlaylist: (MassPlaylist) -> Unit
 ) {
     var text by remember { mutableStateOf(query) }
+    var selectedProvider by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(text) {
         delay(400)
         onQueryChange(text)
@@ -2829,6 +2917,34 @@ private fun SearchSheet(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)
             )
             Spacer(Modifier.height(8.dp))
+            // Filter op provider: de gekozen chip blijft staan, ook als een nieuwe zoekopdracht
+            // niets van die provider oplevert, zodat je hem zelf weer kunt uitzetten.
+            val providerOptions = (results.providers + listOfNotNull(selectedProvider)).distinct()
+                .sortedBy { providerDisplayName(it).lowercase() }
+            if ((text.isNotBlank() && providerOptions.size > 1) || selectedProvider != null) {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    item {
+                        FilterChip(
+                            selected = selectedProvider == null,
+                            onClick = { selectedProvider = null },
+                            label = { Text("Alle") }
+                        )
+                    }
+                    items(providerOptions) { provider ->
+                        FilterChip(
+                            selected = selectedProvider == provider,
+                            onClick = {
+                                selectedProvider = if (selectedProvider == provider) null else provider
+                            },
+                            label = { Text(providerDisplayName(provider)) }
+                        )
+                    }
+                }
+            }
+            val shown = results.filteredBy(selectedProvider)
             when {
                 isLoading -> {
                     Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
@@ -2844,7 +2960,7 @@ private fun SearchSheet(
                         )
                     }
                 }
-                results.isEmpty -> {
+                shown.isEmpty -> {
                     Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                         Text(
                             "Niks gevonden.",
@@ -2855,9 +2971,9 @@ private fun SearchSheet(
                 }
                 else -> {
                     LazyColumn {
-                        if (results.tracks.isNotEmpty()) {
+                        if (shown.tracks.isNotEmpty()) {
                             item { SearchSectionHeader("Nummers") }
-                            items(results.tracks) { track ->
+                            items(shown.tracks) { track ->
                                 SearchResultRow(
                                     title = track.title,
                                     subtitle = track.subtitle,
@@ -2867,9 +2983,9 @@ private fun SearchSheet(
                                 )
                             }
                         }
-                        if (results.artists.isNotEmpty()) {
+                        if (shown.artists.isNotEmpty()) {
                             item { SearchSectionHeader("Artiesten") }
-                            items(results.artists) { artist ->
+                            items(shown.artists) { artist ->
                                 SearchResultRow(
                                     title = artist.name,
                                     subtitle = "",
@@ -2879,9 +2995,9 @@ private fun SearchSheet(
                                 )
                             }
                         }
-                        if (results.albums.isNotEmpty()) {
+                        if (shown.albums.isNotEmpty()) {
                             item { SearchSectionHeader("Albums") }
-                            items(results.albums) { album ->
+                            items(shown.albums) { album ->
                                 SearchResultRow(
                                     title = album.name,
                                     subtitle = album.subtitle,
@@ -2891,9 +3007,9 @@ private fun SearchSheet(
                                 )
                             }
                         }
-                        if (results.playlists.isNotEmpty()) {
+                        if (shown.playlists.isNotEmpty()) {
                             item { SearchSectionHeader("Afspeellijsten") }
-                            items(results.playlists) { playlist ->
+                            items(shown.playlists) { playlist ->
                                 SearchResultRow(
                                     title = playlist.name,
                                     subtitle = playlist.trackCount?.let { "$it nummers" } ?: "",
@@ -2908,6 +3024,29 @@ private fun SearchSheet(
             }
         }
     }
+}
+
+/** Leesbare naam voor een MA provider-domein in de zoekfilter. */
+private fun providerDisplayName(domain: String): String = when (domain) {
+    "spotify" -> "Spotify"
+    "ytmusic" -> "YouTube Music"
+    "youtube" -> "YouTube"
+    "tidal" -> "Tidal"
+    "deezer" -> "Deezer"
+    "qobuz" -> "Qobuz"
+    "apple_music" -> "Apple Music"
+    "soundcloud" -> "SoundCloud"
+    "tunein" -> "TuneIn"
+    "radiobrowser" -> "Radio Browser"
+    "plex" -> "Plex"
+    "jellyfin" -> "Jellyfin"
+    "opensubsonic", "subsonic" -> "Subsonic"
+    "filesystem_local" -> "Lokale bestanden"
+    "filesystem_smb" -> "Netwerkshare"
+    "builtin" -> "Ingebouwd"
+    "audible" -> "Audible"
+    "podcastfeed" -> "Podcasts"
+    else -> domain.replace('_', ' ').replaceFirstChar { it.uppercase() }
 }
 
 @Composable

@@ -935,6 +935,45 @@ class MassViewModel : ViewModel() {
         }
     }
 
+    fun toggleAutoplay() {
+        val playerId = _uiState.value.selectedPlayerId ?: return
+        val enable = !(_uiState.value.queue?.autoplayEnabled ?: false)
+        // Direct tonen; de refresh hieronder zet het terug als MA het niet overneemt.
+        _uiState.update { s -> s.copy(queue = s.queue?.copy(autoplayEnabled = enable)) }
+        viewModelScope.launch {
+            try {
+                client?.setAutoplay(playerId, enable)
+                refreshAfterCommand()
+            } catch (e: Exception) {
+                _uiState.update { s ->
+                    s.copy(
+                        queue = s.queue?.copy(autoplayEnabled = !enable),
+                        errorMessage = "Autoplay ${if (enable) "aanzetten" else "uitzetten"} mislukt: ${e.message}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun toggleCrossfade() {
+        val playerId = _uiState.value.selectedPlayerId ?: return
+        val enable = !(_uiState.value.queue?.crossfadeEnabled ?: false)
+        _uiState.update { s -> s.copy(queue = s.queue?.copy(crossfadeEnabled = enable)) }
+        viewModelScope.launch {
+            try {
+                client?.setCrossfade(playerId, enable)
+                refreshAfterCommand()
+            } catch (e: Exception) {
+                _uiState.update { s ->
+                    s.copy(
+                        queue = s.queue?.copy(crossfadeEnabled = !enable),
+                        errorMessage = "Crossfade ${if (enable) "aanzetten" else "uitzetten"} mislukt: ${e.message}"
+                    )
+                }
+            }
+        }
+    }
+
     fun clearQueue() {
         val playerId = _uiState.value.selectedPlayerId ?: return
         viewModelScope.launch {

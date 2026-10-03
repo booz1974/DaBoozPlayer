@@ -33,6 +33,7 @@ De app bevat nu een experimentele **AI Radio DJ** die je playlists aan elkaar pr
 - **ElevenLabs Integratie**: Gebruikt de hoogwaardige stemmen van ElevenLabs via Home Assistant.
 - **Aanpasbare Stijl**: Kies uit verschillende stijlen zoals 'Enthousiast', 'Grappig' of 'Zakelijk'.
 - **Vrije Instructies**: Geef de DJ specifieke opdrachten mee (bijv. "Vertel iets over het weer" of "Maak een grapje over de band").
+- **Live-status**: Of er een DJ actief is op de gekozen speler komt uit `ai_radio/queue_dj/status`. Welke commando's de AI Radio-plugin precies kent, zie je op je eigen server onder `/api-docs/commands`.
 
 ## Belangrijkste Functionaliteiten
 
@@ -62,6 +63,9 @@ De app is zich bewust van zijn locatie om de interface schoon en relevant te hou
 - **Vloeiende voortgangsbalk**: De positie loopt lokaal door tussen de serverpolls in, zodat de balk soepel meebeweegt in plaats van te verspringen.
 - **Spoelen**: Versleep de voortgangsbalk om naar een ander punt in het nummer te springen; het spoel-commando gaat pas naar de server als je loslaat.
 - **Zoeken** 🔍: Zoek op artiest, titel, album of afspeellijst via Music Assistant (`music/search`). Resultaten staan per categorie (nummers, artiesten, albums, afspeellijsten); albums tonen hoes, artiest en jaartal. Alles kun je direct afspelen of als volgende in de wachtrij zetten.
+- **Filter op provider**: Onder het zoekveld staan chips (Alle, Spotify, YouTube Music, Bandcamp, Lokale bestanden, …) met de providers die in de resultaten voorkomen. Een bibliotheek-item telt mee voor elke provider waaraan het gekoppeld is (`provider_mappings`).
+- **Crossfade & Autoplay**: Rechtsonder in de "Nu Spelend"-kaart staan twee icoontjes waarmee je crossfade (`player_queues/crossfade`) en autoplay, het vroegere "Don't stop the music" (`player_queues/autoplay`), van de wachtrij aan- of uitzet. Aan = fel icoon met een rondje erachter.
+- **Playlist-hoezen**: Afbeeldingen die alleen op de MA-server staan (bijv. eigen collages of het MA-logo bij dynamische playlists) lopen via MA's imageproxy (`/imageproxy/<proxy_id>`). Heeft een favoriete playlist helemaal geen afbeelding, dan maakt de app een 2×2-collage van de hoezen van de eerste nummers.
 - **Meest gekozen bovenaan**: Favoriete afspeellijsten en radiozenders worden gesorteerd op hoe vaak je ze kiest (daarna alfabetisch). De tellingen blijven bewaard tussen app-herstarts.
 - **Slaaptimer** 🌙: Zet via de maan-knop een timer op 15/30/45/60/90 minuten. Een chip toont de resterende tijd; daarna pauzeert de muziek automatisch.
 - **Lockscreen- & bluetooth-bediening**: Een `MediaSession` toont het nu spelende nummer met hoes in de notificatiebalk en op het lockscreen. Play/pauze/vorige/volgende werken daar en via bluetooth-, koptelefoon- en autoknoppen; de commando's gaan naar Music Assistant en de status komt terug in de notificatie.
@@ -93,7 +97,7 @@ De telefoon-als-speler is ook een mediabron voor Android Auto (Media3 `MediaLibr
 
 ### 6. Techniek & Connectiviteit
 - **Rechtstreekse Verbinding**: Commando's gaan via JSON-RPC (`POST /api`) direct naar de Music Assistant server; HA-services via de REST API.
-- **Push i.p.v. pollen**: Een WebSocket (`wss://<server>/ws`) authenticeert met een `auth`-commando en levert daarna live events (`player_updated`, `queue_updated`, …). De app ververst binnen ~250 ms op zo'n event i.p.v. elke paar seconden te pollen. Er blijft een trage heartbeat (30 s) als vangnet; valt de socket weg, dan schakelt de app terug naar snel pollen (3 s) en verbindt automatisch opnieuw met oplopende backoff.
+- **Push i.p.v. pollen**: Een WebSocket (`wss://<server>/ws`) authenticeert met een `auth`-commando en levert daarna live events (`player_updated`, `queue_updated`, …). De app ververst binnen ~250 ms op zo'n event i.p.v. elke paar seconden te pollen. Er blijft een trage heartbeat (30 s) als vangnet; valt de socket weg, dan schakelt de app terug naar snel pollen (3 s) en verbindt automatisch opnieuw met oplopende backoff. Er is altijd maar één socket: opnieuw verbinden gebeurt alleen bij een echt ander server-adres of token, en meldingen van een al vervangen socket worden genegeerd.
 - **Portrait Only**: De app blijft altijd in staande stand voor een consistente ervaring.
 - **Sessie Management**: Houdt je Music Assistant-sessie op de achtergrond actief.
 - **Artwork-cache**: iTunes-hoeszoekopdrachten worden per zoekterm onthouden om onnodig netwerkverkeer te voorkomen.

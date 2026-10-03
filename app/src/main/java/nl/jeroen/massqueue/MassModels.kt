@@ -147,7 +147,11 @@ data class MassPlaylist(
     val uri: String,
     val name: String,
     val trackCount: Int?,
-    val imagePath: String?
+    val imagePath: String?,
+    /** Provider-domeinen (bv. "spotify", "ytmusic") waar dit item vandaan komt; alleen gevuld bij zoeken. */
+    val providers: Set<String> = emptySet(),
+    /** Hoezen van de eerste nummers, voor playlists zonder eigen afbeelding (max. 4). */
+    val collage: List<String> = emptyList()
 ) {
     /** MA-URI's hebben de vorm <provider>://playlist/<item_id>, bv. library://playlist/68 */
     val providerFromUri: String? get() = uri.substringBefore("://", "").ifBlank { null }
@@ -165,14 +169,17 @@ data class MassTrack(
     val uri: String,
     val title: String,
     val subtitle: String,
-    val imagePath: String?
+    val imagePath: String?,
+    /** Provider-domeinen (bv. "spotify", "ytmusic") waar dit item vandaan komt. */
+    val providers: Set<String> = emptySet()
 )
 
 /** Eén artiest-zoekresultaat uit `music/search`. */
 data class MassArtist(
     val uri: String,
     val name: String,
-    val imagePath: String?
+    val imagePath: String?,
+    val providers: Set<String> = emptySet()
 )
 
 /** Eén album-zoekresultaat uit `music/search`. */
@@ -181,7 +188,8 @@ data class MassAlbum(
     val name: String,
     /** Artiest(en) en jaartal, bv. "Chic · 1978". */
     val subtitle: String,
-    val imagePath: String?
+    val imagePath: String?,
+    val providers: Set<String> = emptySet()
 )
 
 /** Gecategoriseerde resultaten van de handmatige zoekfunctie. */
@@ -192,6 +200,20 @@ data class MassSearchResults(
     val playlists: List<MassPlaylist> = emptyList()
 ) {
     val isEmpty: Boolean get() = tracks.isEmpty() && artists.isEmpty() && albums.isEmpty() && playlists.isEmpty()
+
+    /** Alle provider-domeinen die in de resultaten voorkomen, voor de filterchips. */
+    val providers: List<String>
+        get() = (tracks.flatMap { it.providers } + artists.flatMap { it.providers } +
+            albums.flatMap { it.providers } + playlists.flatMap { it.providers }).distinct().sorted()
+
+    /** Alleen de resultaten die via [provider] beschikbaar zijn; null = alles. */
+    fun filteredBy(provider: String?): MassSearchResults =
+        if (provider == null) this else MassSearchResults(
+            tracks = tracks.filter { provider in it.providers },
+            artists = artists.filter { provider in it.providers },
+            albums = albums.filter { provider in it.providers },
+            playlists = playlists.filter { provider in it.providers }
+        )
 }
 
 data class MassLocation(
@@ -287,7 +309,10 @@ data class QueueState(
     val activeSourceUri: String? = null,
     val elapsedTime: Int? = null,
     /** MA-herhaalstand: "off", "one" of "all". */
-    val repeatMode: String = "off"
+    val repeatMode: String = "off",
+    /** Autoplay (voorheen "Don't stop the music"): vult de wachtrij aan als die leeg raakt. */
+    val autoplayEnabled: Boolean = false,
+    val crossfadeEnabled: Boolean = false
 ) {
     val currentItem: QueueTrack? get() = items.find { it.absoluteIndex == currentIndex }
     val pastItems: List<QueueTrack> get() = items.filter { it.absoluteIndex < currentIndex }
