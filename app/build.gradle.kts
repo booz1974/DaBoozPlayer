@@ -16,16 +16,16 @@ plugins {
 
 android {
     namespace = "nl.jeroen.massqueue"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         // Lokaal te overschrijven via spinflow.applicationId in local.properties (niet in git),
         // bijv. om een eerder geïnstalleerde versie met een ander ID bij te werken
         applicationId = localProperty("spinflow.applicationId") ?: "nl.jeroen.massqueue"
         minSdk = 26
-        targetSdk = 34
-        versionCode = 8
-        versionName = "3.3"
+        targetSdk = 36
+        versionCode = 9
+        versionName = "3.3.1"
         resValue("string", "app_name", "SpinFlow")
         buildConfigField(
             "String", "BUILD_TIME",
