@@ -287,7 +287,7 @@ fun PlayerScreen(
                             title = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
-                                        painterResource(R.drawable.spinflow_player_logo),
+                                        painterResource(R.drawable.ic_spinflow),
                                         contentDescription = "SpinFlow",
                                         tint = Color.Unspecified,
                                         modifier = Modifier
@@ -3806,12 +3806,22 @@ private fun CassetteLabel(side: String, title: String, modifier: Modifier = Modi
                     )
                 }
                 Spacer(Modifier.width(10.dp))
-                Icon(
-                    painterResource(R.drawable.spinflow_player_logo),
-                    contentDescription = "SpinFlow",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(30.dp)
-                )
+                // S-logo monochroom in de steunkleur (net als de bies); het oog erover in
+                // papierkleur, anders smelten de twee helften samen tot één vlak.
+                Box(Modifier.size(30.dp)) {
+                    Icon(
+                        painterResource(R.drawable.ic_spinflow_mark),
+                        contentDescription = "SpinFlow",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    Icon(
+                        painterResource(R.drawable.ic_spinflow_eye),
+                        contentDescription = null,
+                        tint = LabelPaper,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
         }
     }

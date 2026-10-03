@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo/spinflow_logo_1024.png" alt="SpinFlow-logo" width="128">
+</p>
+
 # SpinFlow Player
 
 **Music Assistant Queue Control**: een native Android-app voor je [Music Assistant](https://music-assistant.io/) server.
@@ -21,7 +25,7 @@ Boven in het scherm zit een cassettebandje dat laat zien wat er speelt:
 - **Draaiende spoeltjes**: de spoeltjes **draaien zolang er muziek speelt** en **staan stil zodra de muziek pauzeert of stopt**, zodat je in één oogopslag ziet of er iets klinkt.
 - **Handgeschreven etiket**: op het bandje zit een papieren sticker waarop de naam van de playlist, het album of de radiozender met stift is geschreven, net als op zelf opgenomen bandjes van vroeger.
 - **Side A of Side B**: bij elke nieuwe playlist, album of zender kiest de app willekeurig of je naar kant A of kant B luistert.
-- **Kleurt mee met je thema**: de bies bovenaan het etiket en het SpinFlow-logo erop hebben de steunkleur van het gekozen thema.
+- **Kleurt mee met je thema**: de bies bovenaan het etiket en het S-logo erop hebben de steunkleur van het gekozen thema (het "oog" van de S in papierkleur, zodat de vorm leesbaar blijft).
 - **Disco & instellingen**: rechtsonder op het bandje zitten de disco-schakelaar 🪩 en het tandwiel voor de instellingen.
 - **Liever compact?** Zet in Instellingen de *Compacte Minimalist Header* aan voor een slanke balk met logo in plaats van het bandje.
 
@@ -101,6 +105,9 @@ De telefoon-als-speler is ook een mediabron voor Android Auto (Media3 `MediaLibr
 - **Portrait Only**: De app blijft altijd in staande stand voor een consistente ervaring.
 - **Sessie Management**: Houdt je Music Assistant-sessie op de achtergrond actief.
 - **Artwork-cache**: iTunes-hoeszoekopdrachten worden per zoekterm onthouden om onnodig netwerkverkeer te voorkomen.
+
+## Logo
+Het S-logo staat in `docs/logo/` als SVG en als PNG van 1024 en 2048 px (bijv. voor de Play Store-vermelding). In de app zit het als vector-drawable: `ic_spinflow` (met donkere achtergrond, in de compacte header) en `ic_spinflow_mark` (zonder achtergrond, voor het app-icoon op `#0E1B34` en, in de steunkleur, het cassette-etiket) en `ic_spinflow_eye` (alleen het oog, als uitsparing op het etiket).
 
 ## Installatie & Configuratie voor Ontwikkelaars
 
